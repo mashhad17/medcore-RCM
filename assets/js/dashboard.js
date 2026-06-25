@@ -62,6 +62,11 @@ function metricBucket(app) {
 
 function filterByMetric(apps, metric) {
     if (metric === 'total') return apps;
+    if (metric === 'checkedin') {
+        const queue = JSON.parse(localStorage.getItem('medcore_live_queue')) || [];
+        const queuedMrns = new Set(queue.map(q => q.mrn).filter(Boolean));
+        return apps.filter(a => metricBucket(a) === 'checkedin' || (a.mrn && queuedMrns.has(a.mrn)));
+    }
     return apps.filter(a => metricBucket(a) === metric);
 }
 
@@ -93,11 +98,29 @@ function fmtTime(app) {
 
 function updateMetricCounts() {
     const apps = getTodayAppointments();
+    const queue = JSON.parse(localStorage.getItem('medcore_live_queue')) || [];
+    const queuedMrns = new Set(queue.map(q => q.mrn).filter(Boolean));
+
+    const appMrns = new Set();
     const counts = { total: apps.length, checkedin: 0, pending: 0, cancelled: 0 };
+
     apps.forEach(a => {
-        const b = metricBucket(a);
+        if (a.mrn) appMrns.add(a.mrn);
+        let b = metricBucket(a);
+        // Patient physically in the waiting room → always count as checked-in,
+        // even if the appointment status hasn't synced to DB yet.
+        if (b === 'pending' && a.mrn && queuedMrns.has(a.mrn)) b = 'checkedin';
         if (counts[b] !== undefined) counts[b]++;
     });
+
+    // Walk-in queue entries that have no matching appointment (edge case)
+    queue.forEach(q => {
+        if (q.mrn && !appMrns.has(q.mrn)) {
+            counts.total++;
+            counts.checkedin++;
+        }
+    });
+
     ['total', 'checkedin', 'pending', 'cancelled'].forEach(k => {
         const el = document.getElementById('metric-' + k);
         if (el) el.textContent = counts[k];
@@ -222,6 +245,10 @@ function pollMiniQueueTracker() {
         })
         .catch(err => {
             console.error('Failed to poll mini queue tracker', err);
+            const container = document.getElementById('miniQueueTracker');
+            if (container && container.innerHTML.includes('Loading')) {
+                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 13px;">Waiting room is empty</div>';
+            }
         });
 }
 
@@ -287,10 +314,9 @@ window.processWalkIn = function() {
         id: appId,
         mrn: mrn,
         patientName: name,
-        doctorName: doctor,
-        status: 'waiting',
-        timeIn: timeStr,
-        priority: 'normal'
+        doctor: doctor,
+        reason: 'Walk-in Fast Track',
+        checkedInAt: new Date().toISOString()
     };
 
     queue.push(newQueueItem);
