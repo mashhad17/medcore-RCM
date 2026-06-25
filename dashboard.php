@@ -645,44 +645,6 @@
 
                     <div style="display: flex; flex-direction: column; gap: 1.5rem;">
 
-                        <div class="base-card">
-                            <div class="card-header">
-                                <div class="card-title">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2" style="color: var(--accent);">
-                                        <path d="M9 11l3 3L22 4"></path>
-                                        <path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path>
-                                    </svg>
-                                    Shift Checklist
-                                </div>
-                                <span
-                                    style="font-size: 0.6875rem; background: var(--bg-aesthetic); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-weight: 600;">1/4
-                                    Completed</span>
-                            </div>
-                            <div class="checklist-body">
-                                <label class="check-item">
-                                    <input type="checkbox">
-                                    <span class="check-text">Verify tomorrow's clinical schedule</span>
-                                </label>
-                                <label class="check-item">
-                                    <input type="checkbox">
-                                    <span class="check-text">Call IT for reception printer issue</span>
-                                </label>
-                                <label class="check-item completed">
-                                    <input type="checkbox" checked>
-                                    <span class="check-text">Pre-auth billing check for Zain Ahmed (MRN-88412)</span>
-                                </label>
-                                <label class="check-item">
-                                    <input type="checkbox">
-                                    <span class="check-text">Perform evening clinic safety checklist</span>
-                                </label>
-
-                                <div class="add-task-row">
-                                    <input type="text" class="task-input" placeholder="Add custom checklist task...">
-                                    <button class="btn-primary" style="padding: 0.5rem 1rem;">Add Task</button>
-                                </div>
-                            </div>
-                        </div>
 
                         <div class="base-card">
                             <div class="card-header">
@@ -701,69 +663,7 @@
 
                     </div>
 
-                    <div>
-                        <div class="base-card">
-                            <div class="card-header">
-                                <div class="card-title">
-                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                        stroke-width="2" style="color: var(--danger);">
-                                        <path
-                                            d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z">
-                                        </path>
-                                        <line x1="12" y1="9" x2="12" y2="13"></line>
-                                        <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                                    </svg>
-                                    Shift Warnings
-                                </div>
-                                <span class="active-dot"
-                                    style="background: var(--danger); width: 8px; height: 8px;"></span>
-                            </div>
 
-                            <div class="warnings-body">
-                                <div class="alert-card alert-warning">
-                                    <div class="alert-header">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2">
-                                            <path
-                                                d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z">
-                                            </path>
-                                            <line x1="12" y1="9" x2="12" y2="13"></line>
-                                            <line x1="12" y1="17" x2="12.01" y2="17"></line>
-                                        </svg>
-                                        Dr. Roger Late
-                                    </div>
-                                    <div class="alert-text">Dr. Roger is running 15 minutes late for consultations.
-                                    </div>
-                                </div>
-
-                                <div class="alert-card alert-info">
-                                    <div class="alert-header">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2">
-                                            <circle cx="12" cy="12" r="10"></circle>
-                                            <line x1="12" y1="16" x2="12" y2="12"></line>
-                                            <line x1="12" y1="8" x2="12.01" y2="8"></line>
-                                        </svg>
-                                        Insurance Pending
-                                    </div>
-                                    <div class="alert-text">Pending insurance pre-auth approval for Sumitha De.</div>
-                                </div>
-
-                                <div class="alert-card alert-success">
-                                    <div class="alert-header">
-                                        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
-                                            stroke="currentColor" stroke-width="2">
-                                            <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
-                                            <polyline points="22 4 12 14.01 9 11.01"></polyline>
-                                        </svg>
-                                        Clinic Supply Alert
-                                    </div>
-                                    <div class="alert-text">Dental sterilization packs running low in Dental Surgery.
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
 
                 </div>
 
