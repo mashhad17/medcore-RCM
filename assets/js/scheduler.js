@@ -260,9 +260,28 @@ function getAppointmentsForDate(dateString) {
 }
 
 /* ── 4. TIMELINE RENDERING ── */
+function renderGridHeaders() {
+    if (typeof window.getRealTimeProviderStatus === 'function') {
+        const providers = window.getRealTimeProviderStatus();
+        providers.forEach((p, index) => {
+            const headerCol = document.getElementById(`doc-header-${index}`);
+            if (headerCol) {
+                headerCol.innerHTML = `
+                    <div class="doctor-name">${p.name.split(' (')[0]}</div>
+                    <div class="doctor-spec">${p.dept}</div>
+                    <div style="display:flex; align-items:center; justify-content:center; gap:4px; font-size:0.6875rem; color:var(--text-muted); margin-top:6px; font-weight: 500;">
+                        <span class="status-dot ${p.dotClass}"></span> ${p.status}
+                    </div>
+                `;
+            }
+        });
+    }
+}
+
 function renderAppointmentsForDate(dateString) {
     getAppointmentsForDate(dateString);
     forceTimeIntegrity();
+    renderGridHeaders();
 
     for (let i = 0; i < 5; i++) { const col = document.getElementById(`col-${i}`); if (col) col.innerHTML = ''; }
 

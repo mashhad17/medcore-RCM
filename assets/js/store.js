@@ -61,4 +61,41 @@
         nativeRemoveItem(key);
         if (SYNCED[key]) persist(SYNCED[key], '[]');
     };
+
+    window.getRealTimeProviderStatus = function() {
+        const apps = JSON.parse(localStorage.getItem('medcore_appointments') || '[]');
+        const d = new Date();
+        const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        const todaysApps = apps.filter(a => a.date === todayStr);
+
+        const currentTotalMinutes = d.getHours() * 60 + d.getMinutes();
+
+        const doctors = [
+            { name: 'Dr. Mohammed', dept: 'General Practice', key: 'Dr. Mohammed (General Practice)' },
+            { name: 'Dr. Fatima', dept: 'Dental Surgery', key: 'Dr. Fatima (Dental Surgery)' },
+            { name: 'Dr. Roger', dept: 'Dermatology', key: 'Dr. Roger (Dermatology)' },
+            { name: 'Dr. Sarah', dept: 'Pediatrics', key: 'Dr. Sarah (Pediatrics)' },
+            { name: 'Dr. Ali', dept: 'Orthopedics', key: 'Dr. Ali (Orthopedics)' }
+        ];
+
+        return doctors.map(doc => {
+            const activeApp = todaysApps.find(a => {
+                if (a.doctorName !== doc.key) return false;
+                if (a.status === 'completed' || a.status === 'cancelled') return false;
+                const startMins = (a.startHour * 60) + (a.startMinute || 0);
+                const endMins = startMins + (a.duration || 30);
+                return currentTotalMinutes >= startMins && currentTotalMinutes < endMins;
+            });
+
+            if (activeApp) {
+                return { ...doc, status: 'In Consultation', dotClass: 'blue' };
+            }
+
+            if (d.getHours() < 8 || d.getHours() >= 17) {
+                return { ...doc, status: 'Off-Shift', dotClass: 'gray' };
+            }
+
+            return { ...doc, status: 'Available', dotClass: 'green' };
+        });
+    };
 })();

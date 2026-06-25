@@ -15,6 +15,18 @@
         href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;1,400&display=swap"
         rel="stylesheet" />
     <link rel="stylesheet" href="assets/css/medcore.css" />
+    <style>
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            display: inline-block;
+        }
+        .status-dot.blue { background-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15); }
+        .status-dot.green { background-color: #10b981; box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15); }
+        .status-dot.red { background-color: #ef4444; box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.15); }
+        .status-dot.gray { background-color: #9ca3af; box-shadow: 0 0 0 3px rgba(156, 163, 175, 0.15); }
+    </style>
     <?php require_once __DIR__ . '/bootstrap.php'; ?>
     <script src="assets/js/store.js"></script>
 </head>
@@ -150,23 +162,23 @@
                 <div class="grid-area">
                     <div class="grid-header-row">
                         <div class="time-axis-spacer"></div>
-                        <div class="doctor-col-header">
+                        <div class="doctor-col-header" id="doc-header-0">
                             <div class="doctor-name">Dr. Mohammed</div>
                             <div class="doctor-spec">General Practice</div>
                         </div>
-                        <div class="doctor-col-header">
+                        <div class="doctor-col-header" id="doc-header-1">
                             <div class="doctor-name">Dr. Fatima</div>
                             <div class="doctor-spec">Dental Surgery</div>
                         </div>
-                        <div class="doctor-col-header">
+                        <div class="doctor-col-header" id="doc-header-2">
                             <div class="doctor-name">Dr. Roger</div>
                             <div class="doctor-spec">Dermatology</div>
                         </div>
-                        <div class="doctor-col-header">
+                        <div class="doctor-col-header" id="doc-header-3">
                             <div class="doctor-name">Dr. Sarah</div>
                             <div class="doctor-spec">Pediatrics</div>
                         </div>
-                        <div class="doctor-col-header">
+                        <div class="doctor-col-header" id="doc-header-4">
                             <div class="doctor-name">Dr. Ali</div>
                             <div class="doctor-spec">Orthopedics</div>
                         </div>

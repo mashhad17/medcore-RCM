@@ -218,7 +218,7 @@
 
         .hub-grid {
             display: grid;
-            grid-template-columns: 2fr 1fr;
+            grid-template-columns: 1fr 320px;
             gap: 1.5rem;
             align-items: start;
         }
@@ -426,6 +426,214 @@
             color: var(--text-dark);
             line-height: 1.5;
         }
+        .provider-panel {
+            background: #FFFFFF;
+            border-radius: 12px;
+            box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+            padding: 20px;
+            border: 1px solid #E5E7EB;
+        }
+
+        .provider-panel-header {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            margin-bottom: 16px;
+        }
+
+        .provider-panel-title {
+            font-weight: 600;
+            color: #111827;
+            font-size: 1.0625rem;
+            display: flex;
+            align-items: center;
+            gap: 8px;
+        }
+
+        .provider-panel-summary {
+            font-size: 12px;
+            color: #6B7280;
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            margin-left: 26px;
+        }
+
+        .provider-list {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .provider-row {
+            display: flex;
+            align-items: center;
+            padding: 10px 12px;
+            border-radius: 8px;
+            border-bottom: 1px solid #F3F4F6;
+            transition: background 0.2s ease;
+            cursor: pointer;
+        }
+
+        .provider-row:last-child {
+            border-bottom: none;
+        }
+
+        .provider-row:hover {
+            background: #F9FAFB;
+        }
+
+        .provider-row-avatar {
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            background-color: #F3F4F6;
+            color: #374151;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 600;
+            font-size: 14px;
+            flex-shrink: 0;
+            margin-right: 12px;
+        }
+
+        .provider-row-info {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .provider-row-name {
+            font-weight: 600;
+            font-size: 14px;
+            color: #111827;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .provider-row-spec {
+            font-size: 12px;
+            color: #6B7280;
+            margin-top: 2px;
+        }
+
+        .provider-row-status {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            font-size: 12px;
+            color: #10B981;
+            font-weight: 500;
+        }
+
+        .provider-row-status.status-neutral {
+            color: #6B7280;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.8); opacity: 1; }
+            100% { transform: scale(2); opacity: 0; }
+        }
+
+        .pulse-dot {
+            position: relative;
+            display: inline-block;
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #10B981;
+            flex-shrink: 0;
+        }
+
+        .pulse-dot::before {
+            content: '';
+            position: absolute;
+            inset: 0;
+            border-radius: 50%;
+            background-color: #10B981;
+            animation: pulse-ring 1.5s ease-out infinite;
+        }
+
+        .solid-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #9CA3AF;
+            flex-shrink: 0;
+        }
+
+        /* Fast-Track Widget CSS */
+        .widget-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 1px solid var(--border-light);
+            border-radius: 6px;
+            font-size: 14px;
+            color: var(--text-dark);
+            background: var(--bg-surface);
+            outline: none;
+            transition: border-color 0.2s;
+        }
+        .widget-input:focus {
+            border-color: var(--accent);
+        }
+        .widget-btn {
+            width: 100%;
+            padding: 10px;
+            background: var(--accent);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s;
+            margin-top: 4px;
+        }
+        .widget-btn:hover {
+            opacity: 0.9;
+        }
+
+        /* Mini Live-Queue Tracker */
+        .queue-tracker-list {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        .queue-tracker-item {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 12px 16px;
+            background: var(--bg-board);
+            border: 1px solid var(--border-light);
+            border-radius: 8px;
+        }
+        .queue-tracker-info {
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+        }
+        .queue-tracker-name {
+            font-weight: 600;
+            font-size: 14px;
+            color: var(--text-dark);
+        }
+        .queue-tracker-doc {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+        .queue-tracker-time {
+            font-size: 14px;
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 20px;
+        }
+        .time-green { background: rgba(16, 185, 129, 0.1); color: #10B981; }
+        .time-yellow { background: rgba(245, 158, 11, 0.1); color: #F59E0B; }
+        .time-red { background: rgba(239, 68, 68, 0.1); color: #EF4444; }
     </style>
     <?php require_once __DIR__ . '/bootstrap.php'; ?>
     <script src="assets/js/store.js"></script>
@@ -642,10 +850,27 @@
                 </div>
 
                 <div class="hub-grid">
-
                     <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                        
+                        <!-- Mini Live-Queue Tracker -->
+                        <div class="base-card">
+                            <div class="card-header">
+                                <div class="card-title">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);">
+                                        <circle cx="12" cy="12" r="10"></circle>
+                                        <polyline points="12 6 12 12 16 14"></polyline>
+                                    </svg>
+                                    Next Up (Waiting Room)
+                                </div>
+                            </div>
+                            <div class="activity-body">
+                                <div class="queue-tracker-list" id="miniQueueTracker">
+                                    <div style="text-align: center; color: var(--text-muted); font-size: 13px;">Loading queue...</div>
+                                </div>
+                            </div>
+                        </div>
 
-
+                        <!-- Live Shift Activity -->
                         <div class="base-card">
                             <div class="card-header">
                                 <div class="card-title">
@@ -660,11 +885,62 @@
                             <div class="activity-body" id="activityLogContainer">
                             </div>
                         </div>
-
                     </div>
 
+                    <div style="display: flex; flex-direction: column; gap: 1.5rem;">
+                        
+                        <!-- Fast-Track Walk-In Widget -->
+                        <div class="provider-panel">
+                            <div class="provider-panel-header">
+                                <div class="provider-panel-title">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);">
+                                        <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"></polygon>
+                                    </svg>
+                                    Quick Walk-In
+                                </div>
+                                <div class="provider-panel-summary">
+                                    Fast-track to waiting room
+                                </div>
+                            </div>
+                            <div style="display: flex; flex-direction: column; gap: 12px;">
+                                <input type="text" id="walkin-name" class="widget-input" placeholder="Patient Name" autocomplete="off" />
+                                <input type="tel" id="walkin-phone" class="widget-input" placeholder="Phone Number" autocomplete="off" />
+                                <select id="walkin-doctor" class="widget-input">
+                                    <option value="Dr. Mohammed (General Practice)">Dr. Mohammed (General Practice)</option>
+                                    <option value="Dr. Fatima (Dental Surgery)">Dr. Fatima (Dental Surgery)</option>
+                                    <option value="Dr. Roger (Dermatology)">Dr. Roger (Dermatology)</option>
+                                    <option value="Dr. Sarah (Pediatrics)">Dr. Sarah (Pediatrics)</option>
+                                    <option value="Dr. Ali (Orthopedics)">Dr. Ali (Orthopedics)</option>
+                                    <option value="Unassigned">Unassigned</option>
+                                </select>
+                                <button class="widget-btn" onclick="processWalkIn()">
+                                    Send to Waiting Room
+                                </button>
+                            </div>
+                        </div>
 
-
+                        <!-- Provider Status Board -->
+                        <div class="provider-panel">
+                            <div class="provider-panel-header">
+                                <div class="provider-panel-title">
+                                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                        stroke-width="2" style="color: var(--accent);">
+                                        <path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"></path>
+                                        <circle cx="9" cy="7" r="4"></circle>
+                                        <path d="M22 21v-2a4 4 0 0 0-3-3.87"></path>
+                                        <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                                    </svg>
+                                    Provider Status Board
+                                </div>
+                                <div class="provider-panel-summary" id="provider-status-summary">
+                                    <!-- Populated via JS -->
+                                </div>
+                            </div>
+                            <div class="provider-list" id="providerStatusContainer">
+                                <!-- Populated via JS -->
+                            </div>
+                        </div>
+                    </div>
                 </div>
 
             </main>
