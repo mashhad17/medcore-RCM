@@ -129,9 +129,9 @@
                 <div class="header-actions">
                     <div
                         style="font-size:0.875rem; font-weight:500; color:var(--text-mid); padding-right:1rem; border-right:1px solid var(--border-light);">
-                        <span id="header-time">10:24 AM</span>
+                        <span id="header-time">--:-- --</span>
                         <span id="header-date-text"
-                            style="color:var(--text-muted); font-weight:400; margin-left:4px;">Jun 18, 2026</span>
+                            style="color:var(--text-muted); font-weight:400; margin-left:4px;"></span>
                     </div>
                     <button class="btn-primary" onclick="openBookingPanel('','','')">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"

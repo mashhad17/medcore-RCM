@@ -37,3 +37,30 @@ document.addEventListener('DOMContentLoaded', () => {
         updateThemeIcon('dark');
     }
 });
+
+// 5. Live UAE clock (Gulf Standard Time, UTC+4 — no daylight saving)
+function updateUAEClock() {
+    var now = new Date();
+    var timeStr = now.toLocaleTimeString('en-US', {
+        timeZone: 'Asia/Dubai',
+        hour: 'numeric',
+        minute: '2-digit',
+        hour12: true
+    });
+    var dateStr = now.toLocaleDateString('en-US', {
+        timeZone: 'Asia/Dubai',
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric'
+    });
+
+    var timeEl = document.getElementById('header-time');
+    var dateEl = document.getElementById('header-date');
+    if (timeEl) timeEl.textContent = timeStr;
+    if (dateEl) dateEl.textContent = dateStr;
+}
+
+document.addEventListener('DOMContentLoaded', function () {
+    updateUAEClock();
+    setInterval(updateUAEClock, 1000);
+});

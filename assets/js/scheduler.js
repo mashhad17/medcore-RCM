@@ -130,12 +130,6 @@ function updateTimeIndicator() {
     const topPixels = ((hours - GRID_START_HOUR) * PIXELS_PER_HOUR) + (minutes * (PIXELS_PER_HOUR / 60));
     indicator.style.top = topPixels + 'px';
 
-    let actualHours = now.getHours();
-    let ampm = actualHours >= 12 ? 'PM' : 'AM';
-    let dispHour = actualHours % 12 || 12;
-    let dispMin = minutes < 10 ? '0' + minutes : minutes;
-    document.getElementById('header-time').innerText = `${dispHour}:${dispMin} ${ampm}`;
-
     return topPixels;
 }
 
@@ -2144,10 +2138,11 @@ window.onload = () => {
     selectedDate = new Date();
     displayMonthDate = new Date();
 
-    const month = selectedDate.getMonth();
-    const day = selectedDate.getDate();
-    const year = selectedDate.getFullYear();
-    document.getElementById('header-date-text').textContent = `${shortMonths[month]} ${day}, ${year}`;
+    // Show UAE date in the header
+    var uaeDateStr = new Date().toLocaleDateString('en-US', {
+        timeZone: 'Asia/Dubai', month: 'short', day: 'numeric', year: 'numeric'
+    });
+    document.getElementById('header-date-text').textContent = uaeDateStr;
 
     initAppointments();
     renderCalendar();

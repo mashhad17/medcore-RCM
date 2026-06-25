@@ -74,7 +74,8 @@ const METRIC_TITLES = {
     total: 'All Appointments Today',
     checkedin: 'Checked-In Patients',
     pending: 'Pending Arrivals',
-    cancelled: 'Cancelled Appointments'
+    cancelled: 'Cancelled Appointments',
+    completed: 'Completed Appointments'
 };
 
 const STATUS_STYLES = {
@@ -82,8 +83,8 @@ const STATUS_STYLES = {
     scheduled: { bg: 'var(--info-bg)', color: 'var(--info-text)', label: 'Scheduled' },
     warning: { bg: 'var(--warning-bg)', color: 'var(--warning-text)', label: 'Attention' },
     pending: { bg: 'var(--warning-bg)', color: 'var(--warning-text)', label: 'Pending' },
-    completed: { bg: 'var(--bg-aesthetic)', color: 'var(--text-muted)', label: 'Completed' },
-    past: { bg: 'var(--bg-aesthetic)', color: 'var(--text-muted)', label: 'Completed' },
+    completed: { bg: 'rgba(79,124,172,0.1)', color: 'var(--accent)', label: 'Completed' },
+    past: { bg: 'rgba(79,124,172,0.1)', color: 'var(--accent)', label: 'Completed' },
     cancelled: { bg: 'var(--danger-bg)', color: 'var(--danger)', label: 'Cancelled' }
 };
 
@@ -102,7 +103,7 @@ function updateMetricCounts() {
     const queuedMrns = new Set(queue.map(q => q.mrn).filter(Boolean));
 
     const appMrns = new Set();
-    const counts = { total: apps.length, checkedin: 0, pending: 0, cancelled: 0 };
+    const counts = { total: apps.length, checkedin: 0, pending: 0, cancelled: 0, completed: 0 };
 
     apps.forEach(a => {
         if (a.mrn) appMrns.add(a.mrn);
@@ -121,7 +122,7 @@ function updateMetricCounts() {
         }
     });
 
-    ['total', 'checkedin', 'pending', 'cancelled'].forEach(k => {
+    ['total', 'checkedin', 'pending', 'cancelled', 'completed'].forEach(k => {
         const el = document.getElementById('metric-' + k);
         if (el) el.textContent = counts[k];
     });

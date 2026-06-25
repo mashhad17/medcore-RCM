@@ -120,7 +120,7 @@
                 </div>
                 <div class="header-actions">
                     <div style="font-size:0.875rem; font-weight:500; color:var(--text-mid); padding-right:1.5rem; border-right:1px solid var(--border-light);">
-                        <span>10:24 AM</span> <span style="color:var(--text-muted); font-weight:400; margin-left:6px;">Jun 18, 2026</span>
+                        <span id="header-time">--:-- --</span> <span id="header-date" style="color:var(--text-muted); font-weight:400; margin-left:6px;"></span>
                     </div>
                     <button class="btn-primary" onclick="window.location.href='schedule.php'">
                         Walk-in Patient

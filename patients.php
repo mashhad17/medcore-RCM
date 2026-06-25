@@ -185,7 +185,7 @@
                 </div>
                 <div class="header-actions">
                     <div style="font-size:0.875rem; font-weight:500; color:var(--text-mid); padding-right:1.5rem; border-right:1px solid var(--border-light);">
-                        <span>10:24 AM</span> <span style="color:var(--text-muted); font-weight:400; margin-left:6px;">Jun 18, 2026</span>
+                        <span id="header-time">--:-- --</span> <span id="header-date" style="color:var(--text-muted); font-weight:400; margin-left:6px;"></span>
                     </div>
                     <button class="btn-primary" onclick="window.location.href='schedule.php'">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg>

@@ -48,7 +48,7 @@
 
         .metrics-grid {
             display: grid;
-            grid-template-columns: repeat(4, 1fr);
+            grid-template-columns: repeat(5, 1fr);
             gap: 1.25rem;
             margin-bottom: 1.5rem;
         }
@@ -760,8 +760,8 @@
                 <div class="header-actions">
                     <div
                         style="font-size:0.875rem; font-weight:500; color:var(--text-mid); padding-right:1.5rem; border-right:1px solid var(--border-light);">
-                        <span>10:24 AM</span> <span
-                            style="color:var(--text-muted); font-weight:400; margin-left:6px;">Jun 18, 2026</span>
+                        <span id="header-time">--:-- --</span> <span id="header-date"
+                            style="color:var(--text-muted); font-weight:400; margin-left:6px;"></span>
                     </div>
                     <button class="btn-primary" onclick="window.location.href='schedule.php'">
                         <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
@@ -844,6 +844,20 @@
                                 <circle cx="12" cy="12" r="10"></circle>
                                 <line x1="15" y1="9" x2="9" y2="15"></line>
                                 <line x1="9" y1="9" x2="15" y2="15"></line>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="metric-card metric-clickable" role="button" tabindex="0"
+                        onclick="openMetricDetail('completed')" onkeypress="if(event.key==='Enter')openMetricDetail('completed')">
+                        <div>
+                            <div class="metric-label">Completed</div>
+                            <div class="metric-value" style="color: var(--accent);" id="metric-completed">0</div>
+                        </div>
+                        <div class="metric-icon" style="background: var(--bg-aesthetic); color: var(--accent);">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2">
+                                <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path>
+                                <polyline points="22 4 12 14.01 9 11.01"></polyline>
                             </svg>
                         </div>
                     </div>
