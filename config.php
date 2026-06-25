@@ -22,5 +22,11 @@ function medcore_db()
             PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
         ]
     );
+
+    // Pin this connection to UAE / Gulf Standard Time (UTC+4, no DST) so
+    // NOW()/CURDATE() used by the dashboard match the clinic's local day,
+    // regardless of the server's own timezone.
+    $pdo->exec("SET time_zone = '+04:00'");
+
     return $pdo;
 }

@@ -634,9 +634,38 @@
         .time-green { background: rgba(16, 185, 129, 0.1); color: #10B981; }
         .time-yellow { background: rgba(245, 158, 11, 0.1); color: #F59E0B; }
         .time-red { background: rgba(239, 68, 68, 0.1); color: #EF4444; }
+        /* Walk-in inline validation / result message */
+        .walkin-message {
+            display: none;
+            font-size: 0.8125rem;
+            font-weight: 500;
+            margin-top: 2px;
+        }
+
+        /* Global async error banner */
+        .dashboard-error {
+            display: none;
+            align-items: center;
+            gap: 10px;
+            background: var(--danger-bg);
+            border: 1px solid rgba(239, 68, 68, 0.3);
+            color: var(--danger);
+            padding: 12px 16px;
+            border-radius: 8px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 1.25rem;
+        }
+
+        @media (max-width: 1100px) {
+            .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+        @media (max-width: 560px) {
+            .metrics-grid { grid-template-columns: 1fr; }
+        }
     </style>
-    <?php require_once __DIR__ . '/bootstrap.php'; ?>
-    <script src="assets/js/store.js"></script>
+    <!-- Reception Dashboard reads live state from the database via
+         api/dashboard/summary.php (no localStorage). -->
 </head>
 
 <body>
@@ -713,15 +742,6 @@
                     </div>
                     <span class="fade-text">Live Clinic Queue</span>
                 </a>
-                <a href="payments.php" class="nav-item">
-                    <div class="nav-icon-wrapper">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <rect x="2" y="5" width="20" height="14" rx="2"></rect>
-                            <line x1="2" y1="10" x2="22" y2="10"></line>
-                        </svg>
-                    </div>
-                    <span class="fade-text">Revenue</span>
-                </a>
             </nav>
 
             <div class="sidebar-footer" style="display: flex; justify-content: space-between; align-items: center;">
@@ -786,6 +806,15 @@
                     <div class="active-pill">
                         <span class="active-dot"></span> Shift Active
                     </div>
+                </div>
+
+                <div class="dashboard-error" id="dashboardError" role="alert">
+                    <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                        <circle cx="12" cy="12" r="10"></circle>
+                        <line x1="12" y1="8" x2="12" y2="12"></line>
+                        <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                    </svg>
+                    Live data is unavailable — showing the last known state. Retrying…
                 </div>
 
                 <div class="metrics-grid">
@@ -930,6 +959,7 @@
                                 <button class="widget-btn" onclick="processWalkIn()">
                                     Send to Waiting Room
                                 </button>
+                                <div class="walkin-message" id="walkin-message" role="status" aria-live="polite"></div>
                             </div>
                         </div>
 

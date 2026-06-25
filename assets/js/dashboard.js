@@ -1,72 +1,30 @@
 /* ─────────────────────────────────────────────────
-   MEDCORE HMS · DASHBOARD LOGIC (DYNAMIC AUDIT TRAIL)
+   MEDCORE HMS · RECEPTION SHIFT CONTROL (backend-driven)
+   Every widget reads live state from MySQL via
+   api/dashboard/summary.php. No localStorage for app data.
    ───────────────────────────────────────────────── */
 
-function renderActivityLog() {
-    const logContainer = document.getElementById('activityLogContainer');
-    const logs = JSON.parse(localStorage.getItem('medcore_activity_log')) || [];
+const DASH_POLL_MS = 10000;
+let dashState = { summary: null, loaded: false };
 
-    if (logs.length === 0) {
-        logContainer.innerHTML = `
-            <div style="text-align: center; padding: 2rem 0; color: var(--text-muted); font-size: 0.875rem;">
-                <svg style="margin: 0 auto 8px auto; opacity: 0.5;" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
-                No recent activity.
-            </div>
-        `;
-        return;
-    }
-
-    // Map through the global ledger and build the UI
-    logContainer.innerHTML = logs.map(log => `
-        <div class="activity-item">
-            <span class="time-badge">${log.time}</span>
-            <div class="activity-text">
-                ${log.text} <span class="activity-author">${log.author}</span>
-            </div>
-        </div>
-    `).join('');
+/* ── helpers ── */
+function escapeHtml(s) {
+    return String(s == null ? '' : s)
+        .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
 }
+function shortDoc(name) { return (name || 'Unassigned').split(' (')[0]; }
 
-function clearActivityLog() {
-    // Clear the immutable ledger and refresh the UI
-    localStorage.removeItem('medcore_activity_log');
-    renderActivityLog();
-}
-
-/* ─────────────────────────────────────────────────
-   CLICKABLE METRIC CARDS · LIVE STATUS BREAKDOWN
-   ───────────────────────────────────────────────── */
-
-function todayKey() {
-    const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-}
-
-function getTodayAppointments() {
-    const all = JSON.parse(localStorage.getItem('medcore_appointments')) || [];
-    const key = todayKey();
-    const todays = all.filter(a => a.date === key);
-    // Fall back to everything if no rows are keyed to today (keeps the cards useful
-    // even when the demo data sits on another date).
-    return todays.length ? todays : all;
-}
-
-// Which metric bucket an appointment belongs to.
+/* ── metric buckets (mirror of the server logic, for the drill-down) ── */
 function metricBucket(app) {
     const s = (app.status || 'scheduled').toLowerCase();
-    if (s === 'arrived') return 'checkedin';
     if (s === 'cancelled') return 'cancelled';
     if (s === 'completed' || s === 'past') return 'completed';
-    return 'pending'; // scheduled / warning / pending / anything else
+    if (s === 'arrived' || app.inQueue) return 'checkedin';
+    return 'pending';
 }
-
 function filterByMetric(apps, metric) {
     if (metric === 'total') return apps;
-    if (metric === 'checkedin') {
-        const queue = JSON.parse(localStorage.getItem('medcore_live_queue')) || [];
-        const queuedMrns = new Set(queue.map(q => q.mrn).filter(Boolean));
-        return apps.filter(a => metricBucket(a) === 'checkedin' || (a.mrn && queuedMrns.has(a.mrn)));
-    }
     return apps.filter(a => metricBucket(a) === metric);
 }
 
@@ -77,7 +35,6 @@ const METRIC_TITLES = {
     cancelled: 'Cancelled Appointments',
     completed: 'Completed Appointments'
 };
-
 const STATUS_STYLES = {
     arrived: { bg: 'var(--success-bg)', color: 'var(--success-text)', label: 'Checked-In' },
     scheduled: { bg: 'var(--info-bg)', color: 'var(--info-text)', label: 'Scheduled' },
@@ -87,7 +44,6 @@ const STATUS_STYLES = {
     past: { bg: 'rgba(79,124,172,0.1)', color: 'var(--accent)', label: 'Completed' },
     cancelled: { bg: 'var(--danger-bg)', color: 'var(--danger)', label: 'Cancelled' }
 };
-
 function fmtTime(app) {
     if (app.startHour == null) return '';
     const h = app.startHour;
@@ -97,39 +53,169 @@ function fmtTime(app) {
     return `${h12}:${m} ${ampm}`;
 }
 
-function updateMetricCounts() {
-    const apps = getTodayAppointments();
-    const queue = JSON.parse(localStorage.getItem('medcore_live_queue')) || [];
-    const queuedMrns = new Set(queue.map(q => q.mrn).filter(Boolean));
+/* ── data fetch + render orchestration ── */
+function fetchSummary() {
+    return fetch('api/dashboard/summary.php', { headers: { 'Accept': 'application/json' } })
+        .then(res => {
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            return res.json();
+        })
+        .then(data => {
+            if (data && data.error) throw new Error(data.error);
+            dashState.summary = data;
+            dashState.loaded = true;
+            hideDashboardError();
+            renderMetrics(data.metrics);
+            renderNextUp(data.nextUp);
+            renderActivity(data.activity);
+            renderProviders(data.providers);
+        })
+        .catch(err => {
+            console.error('[dashboard] summary fetch failed:', err);
+            showDashboardError();
+            if (!dashState.loaded) {
+                // First load failed: replace skeletons with empty/error states.
+                renderNextUp(null);
+                renderActivity(null);
+                renderProviders(null);
+            }
+        });
+}
 
-    const appMrns = new Set();
-    const counts = { total: apps.length, checkedin: 0, pending: 0, cancelled: 0, completed: 0 };
+function showDashboardError() {
+    const el = document.getElementById('dashboardError');
+    if (el) el.style.display = 'flex';
+}
+function hideDashboardError() {
+    const el = document.getElementById('dashboardError');
+    if (el) el.style.display = 'none';
+}
 
-    apps.forEach(a => {
-        if (a.mrn) appMrns.add(a.mrn);
-        let b = metricBucket(a);
-        // Patient physically in the waiting room → always count as checked-in,
-        // even if the appointment status hasn't synced to DB yet.
-        if (b === 'pending' && a.mrn && queuedMrns.has(a.mrn)) b = 'checkedin';
-        if (counts[b] !== undefined) counts[b]++;
-    });
-
-    // Walk-in queue entries that have no matching appointment (edge case)
-    queue.forEach(q => {
-        if (q.mrn && !appMrns.has(q.mrn)) {
-            counts.total++;
-            counts.checkedin++;
-        }
-    });
-
+/* ── metrics ── */
+function renderMetrics(metrics) {
+    const m = metrics || {};
     ['total', 'checkedin', 'pending', 'cancelled', 'completed'].forEach(k => {
         const el = document.getElementById('metric-' + k);
-        if (el) el.textContent = counts[k];
+        if (el) el.textContent = (m[k] != null ? m[k] : 0);
     });
 }
 
+/* ── Next Up (Waiting Room) ── */
+function renderNextUp(list) {
+    const container = document.getElementById('miniQueueTracker');
+    if (!container) return;
+
+    if (list === null) {
+        container.innerHTML = emptyRow('Could not load the waiting room.');
+        return;
+    }
+    if (!Array.isArray(list) || list.length === 0) {
+        container.innerHTML = emptyRow('Waiting room is empty');
+        return;
+    }
+
+    container.innerHTML = list.map(q => {
+        const mins = q.wait_time_minutes || 0;
+        let timeClass = 'time-green';
+        if (mins >= 15 && mins <= 29) timeClass = 'time-yellow';
+        else if (mins >= 30) timeClass = 'time-red';
+        return `
+            <div class="queue-tracker-item">
+                <div class="queue-tracker-info">
+                    <div class="queue-tracker-name">${escapeHtml(q.patient_name)}</div>
+                    <div class="queue-tracker-doc">Waiting for ${escapeHtml(shortDoc(q.doctor_name))}</div>
+                </div>
+                <div class="queue-tracker-time ${timeClass}">${mins}m</div>
+            </div>`;
+    }).join('');
+}
+
+/* ── Live Shift Activity ── */
+function renderActivity(list) {
+    const container = document.getElementById('activityLogContainer');
+    if (!container) return;
+
+    if (list === null) {
+        container.innerHTML = activityEmpty('Could not load activity.');
+        return;
+    }
+    if (!Array.isArray(list) || list.length === 0) {
+        container.innerHTML = activityEmpty('No recent activity.');
+        return;
+    }
+
+    container.innerHTML = list.map(log => `
+        <div class="activity-item">
+            <span class="time-badge">${escapeHtml(log.time)}</span>
+            <div class="activity-text">
+                ${escapeHtml(log.text)} <span class="activity-author">${escapeHtml(log.author)}</span>
+            </div>
+        </div>
+    `).join('');
+}
+
+function clearActivityLog() {
+    fetch('api/activity/clear.php', { method: 'POST' })
+        .then(res => res.json())
+        .then(() => fetchSummary())
+        .catch(err => {
+            console.error('[dashboard] clear log failed:', err);
+            showDashboardError();
+        });
+}
+
+/* ── Provider Status Board ── */
+function renderProviders(list) {
+    const container = document.getElementById('providerStatusContainer');
+    const summaryEl = document.getElementById('provider-status-summary');
+    if (!container) return;
+
+    if (list === null) {
+        container.innerHTML = `<div style="padding:12px; color:var(--text-muted); font-size:13px;">Could not load providers.</div>`;
+        if (summaryEl) summaryEl.innerHTML = '';
+        return;
+    }
+    if (!Array.isArray(list) || list.length === 0) {
+        container.innerHTML = `<div style="padding:12px; color:var(--text-muted); font-size:13px;">No active providers.</div>`;
+        if (summaryEl) summaryEl.innerHTML = '';
+        return;
+    }
+
+    const availableCount = list.filter(p => p.status === 'Available').length;
+    if (summaryEl) {
+        summaryEl.innerHTML = `<span class="pulse-dot"></span> ${availableCount} of ${list.length} Available`;
+    }
+
+    const getInitials = (name) => (name || '?').replace('Dr. ', '').trim().charAt(0).toUpperCase();
+
+    container.innerHTML = list.map(p => {
+        let dotHtml, statusClass = '', statusText = p.status;
+        if (p.status === 'Available') {
+            dotHtml = `<div class="pulse-dot"></div>`;
+        } else {
+            dotHtml = `<div class="solid-dot"></div>`;
+            statusClass = 'status-neutral';
+            if (p.status === 'In Consultation') statusText = 'Busy';
+            if (p.status === 'Off-Shift') statusText = 'Unavailable';
+        }
+        return `
+            <div class="provider-row" onclick="window.location.href='schedule.php'">
+                <div class="provider-row-avatar">${escapeHtml(getInitials(p.name))}</div>
+                <div class="provider-row-info">
+                    <div class="provider-row-name">${escapeHtml(shortDoc(p.name))}</div>
+                    <div class="provider-row-spec">${escapeHtml(p.dept)}</div>
+                </div>
+                <div class="provider-row-status ${statusClass}">
+                    ${dotHtml} ${escapeHtml(statusText)}
+                </div>
+            </div>`;
+    }).join('');
+}
+
+/* ── metric drill-down modal (from already-fetched summary) ── */
 function openMetricDetail(metric) {
-    const apps = filterByMetric(getTodayAppointments(), metric)
+    const all = (dashState.summary && dashState.summary.appointments) || [];
+    const apps = filterByMetric(all, metric)
         .slice()
         .sort((a, b) => (a.startHour - b.startHour) || (a.startMinute - b.startMinute));
 
@@ -142,213 +228,99 @@ function openMetricDetail(metric) {
     } else {
         body.innerHTML = apps.map(app => {
             const st = STATUS_STYLES[(app.status || 'scheduled').toLowerCase()] || STATUS_STYLES.scheduled;
-            const time = fmtTime(app);
-            const doc = app.doctorName || '';
-            const sub = [time, doc].filter(Boolean).join(' · ');
+            const sub = [fmtTime(app), shortDoc(app.doctorName)].filter(Boolean).join(' · ');
             return `
                 <div class="metric-row" onclick="window.location.href='schedule.php'">
                     <div>
-                        <div class="metric-row-name">${app.patientName || 'Unknown patient'}</div>
-                        <div class="metric-row-sub">${sub || (app.mrn || '')}</div>
+                        <div class="metric-row-name">${escapeHtml(app.patientName || 'Unknown patient')}</div>
+                        <div class="metric-row-sub">${escapeHtml(sub || app.mrn || '')}</div>
                     </div>
                     <span class="metric-row-status" style="background:${st.bg}; color:${st.color};">${st.label}</span>
                 </div>`;
         }).join('');
     }
-
     document.getElementById('metricModalBackdrop').classList.add('open');
 }
-
 function closeMetricDetail() {
     document.getElementById('metricModalBackdrop').classList.remove('open');
 }
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closeMetricDetail(); });
 
-document.addEventListener('keydown', e => {
-    if (e.key === 'Escape') closeMetricDetail();
-});
-
-function renderProviderStatus() {
-    const container = document.getElementById('providerStatusContainer');
-    if (!container) return;
-
-    if (typeof window.getRealTimeProviderStatus === 'function') {
-        const providers = window.getRealTimeProviderStatus();
-        
-        const availableCount = providers.filter(p => p.status === 'Available').length;
-        const totalCount = providers.length;
-        const summaryEl = document.getElementById('provider-status-summary');
-        if (summaryEl) {
-            summaryEl.innerHTML = `<span class="pulse-dot"></span> ${availableCount} of ${totalCount} Available`;
-        }
-
-        const getInitials = (name) => {
-            const clean = name.replace('Dr. ', '').trim();
-            return clean.charAt(0).toUpperCase();
-        };
-
-        container.innerHTML = providers.map(p => {
-            let dotHtml = '';
-            let statusClass = '';
-            let statusText = p.status;
-            
-            if (p.status === 'Available') {
-                dotHtml = `<div class="pulse-dot"></div>`;
-            } else {
-                dotHtml = `<div class="solid-dot"></div>`;
-                statusClass = 'status-neutral';
-                if (p.status === 'In Consultation') statusText = 'Busy';
-                if (p.status === 'Off-Shift') statusText = 'Unavailable';
-            }
-
-            return `
-                <div class="provider-row" onclick="window.location.href='schedule.php'">
-                    <div class="provider-row-avatar">${getInitials(p.name)}</div>
-                    <div class="provider-row-info">
-                        <div class="provider-row-name">${p.name.split(' (')[0]}</div>
-                        <div class="provider-row-spec">${p.dept}</div>
-                    </div>
-                    <div class="provider-row-status ${statusClass}">
-                        ${dotHtml} ${statusText}
-                    </div>
-                </div>
-            `;
-        }).join('');
-    }
+/* ── empty-state markup helpers ── */
+function emptyRow(text) {
+    return `<div style="text-align:center; color:var(--text-muted); font-size:13px;">${escapeHtml(text)}</div>`;
+}
+function activityEmpty(text) {
+    return `
+        <div style="text-align:center; padding:2rem 0; color:var(--text-muted); font-size:0.875rem;">
+            <svg style="margin:0 auto 8px auto; opacity:0.5;" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="12"></line><line x1="12" y1="16" x2="12.01" y2="16"></line></svg>
+            ${escapeHtml(text)}
+        </div>`;
 }
 
-function pollMiniQueueTracker() {
-    fetch('api/queue/top-waiting.php')
-        .then(res => res.json())
-        .then(data => {
-            const container = document.getElementById('miniQueueTracker');
-            if (!container) return;
-            
-            if (!Array.isArray(data) || data.length === 0) {
-                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 13px;">Waiting room is empty</div>';
-                return;
-            }
-
-            container.innerHTML = data.map(q => {
-                let timeClass = 'time-green';
-                if (q.wait_time_minutes >= 15 && q.wait_time_minutes <= 29) timeClass = 'time-yellow';
-                else if (q.wait_time_minutes >= 30) timeClass = 'time-red';
-
-                return `
-                    <div class="queue-tracker-item">
-                        <div class="queue-tracker-info">
-                            <div class="queue-tracker-name">${q.patient_name}</div>
-                            <div class="queue-tracker-doc">Waiting for ${q.doctor_name.split(' (')[0]}</div>
-                        </div>
-                        <div class="queue-tracker-time ${timeClass}">${q.wait_time_minutes}m</div>
-                    </div>
-                `;
-            }).join('');
-        })
-        .catch(err => {
-            console.error('Failed to poll mini queue tracker', err);
-            const container = document.getElementById('miniQueueTracker');
-            if (container && container.innerHTML.includes('Loading')) {
-                container.innerHTML = '<div style="text-align: center; color: var(--text-muted); font-size: 13px;">Waiting room is empty</div>';
-            }
-        });
+/* ── Quick Walk-In → real record via api/walkin.php ── */
+function setWalkInMessage(text, kind) {
+    const el = document.getElementById('walkin-message');
+    if (!el) return;
+    if (!text) { el.style.display = 'none'; el.textContent = ''; return; }
+    el.style.display = 'block';
+    el.textContent = text;
+    el.style.color = kind === 'error' ? 'var(--danger)' : 'var(--success-text)';
 }
 
-window.onload = () => {
-    renderActivityLog();
-    updateMetricCounts();
-    renderProviderStatus();
-    pollMiniQueueTracker();
-    // Auto-refresh the dashboard logs every 5 seconds to capture actions from other tabs
-    setInterval(renderActivityLog, 5000);
-    setInterval(updateMetricCounts, 5000);
-    setInterval(renderProviderStatus, 5000);
-    setInterval(pollMiniQueueTracker, 60000);
-};
-
-window.processWalkIn = function() {
+window.processWalkIn = function () {
     const nameEl = document.getElementById('walkin-name');
     const phoneEl = document.getElementById('walkin-phone');
     const doctorEl = document.getElementById('walkin-doctor');
-    
+    const btn = document.querySelector('.widget-btn');
     if (!nameEl || !phoneEl || !doctorEl) return;
-    
+
     const name = nameEl.value.trim();
     const phone = phoneEl.value.trim();
     const doctor = doctorEl.value;
 
-    if (!name || !phone) {
-        alert("Please enter patient name and phone number.");
-        return;
+    // Client-side validation (server re-validates).
+    setWalkInMessage('', null);
+    if (!name) { setWalkInMessage('Please enter the patient name.', 'error'); nameEl.focus(); return; }
+    const digits = (phone.match(/\d/g) || []).length;
+    if (!phone || digits < 7 || !/^[0-9+\-\s]+$/.test(phone)) {
+        setWalkInMessage('Please enter a valid phone number.', 'error'); phoneEl.focus(); return;
     }
 
-    const apps = JSON.parse(localStorage.getItem('medcore_appointments') || '[]');
-    const queue = JSON.parse(localStorage.getItem('medcore_live_queue') || '[]');
-    const logs = JSON.parse(localStorage.getItem('medcore_activity_log') || '[]');
+    const originalText = btn ? btn.textContent : '';
+    if (btn) { btn.disabled = true; btn.textContent = 'Sending…'; }
 
-    const mrn = 'MRN-' + Math.floor(100000 + Math.random() * 900000);
-    const appId = 'APP-' + Math.floor(100000 + Math.random() * 900000);
-
-    const now = new Date();
-    const todayStr = `${now.getFullYear()}-${String(now.getMonth()+1).padStart(2,'0')}-${String(now.getDate()).padStart(2,'0')}`;
-    const timeStr = `${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
-
-    const newApp = {
-        id: appId,
-        mrn: mrn,
-        patientName: name,
-        phone: phone,
-        doctorName: doctor,
-        date: todayStr,
-        startHour: now.getHours(),
-        startMinute: now.getMinutes(),
-        duration: 15,
-        status: 'arrived',
-        billingMode: 'Cash',
-        reason: 'Walk-in Fast Track',
-        clinicalProfile: { incomplete: true }
-    };
-
-    apps.push(newApp);
-    localStorage.setItem('medcore_appointments', JSON.stringify(apps));
-
-    const newQueueItem = {
-        id: appId,
-        mrn: mrn,
-        patientName: name,
-        doctor: doctor,
-        reason: 'Walk-in Fast Track',
-        checkedInAt: new Date().toISOString()
-    };
-
-    queue.push(newQueueItem);
-    localStorage.setItem('medcore_live_queue', JSON.stringify(queue));
-
-    logs.unshift({
-        time: now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        text: `Walk-in patient ${name} routed to ${doctor.split(' (')[0]}`,
-        author: 'Reception'
-    });
-    if (logs.length > 50) logs.pop();
-    localStorage.setItem('medcore_activity_log', JSON.stringify(logs));
-
-    if (typeof updateMetricCounts === 'function') updateMetricCounts();
-    if (typeof renderActivityLog === 'function') renderActivityLog();
-    if (typeof renderProviderStatus === 'function') renderProviderStatus();
-
-    nameEl.value = '';
-    phoneEl.value = '';
-    doctorEl.value = 'Dr. Mohammed (General Practice)';
-    
-    const btn = document.querySelector('.widget-btn');
-    if (btn) {
-        const originalText = btn.textContent;
-        btn.textContent = 'Sent to Waiting Room \u2713';
-        btn.style.background = 'var(--success-bg)';
-        btn.style.color = 'var(--success-text)';
-        setTimeout(() => {
-            btn.textContent = originalText;
-            btn.style.background = '';
-            btn.style.color = '';
-        }, 2000);
-    }
+    fetch('api/walkin.php', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, doctor })
+    })
+        .then(res => res.json().then(j => ({ ok: res.ok, body: j })))
+        .then(({ ok, body }) => {
+            if (!ok || !body.ok) throw new Error(body && body.error ? body.error : 'Walk-in failed.');
+            nameEl.value = '';
+            phoneEl.value = '';
+            doctorEl.value = 'Dr. Mohammed (General Practice)';
+            setWalkInMessage('Patient sent to the waiting room ✓', 'ok');
+            if (btn) {
+                btn.textContent = 'Sent ✓';
+                btn.style.background = 'var(--success-text)';
+            }
+            return fetchSummary();
+        })
+        .catch(err => {
+            console.error('[dashboard] walk-in failed:', err);
+            setWalkInMessage(err.message || 'Walk-in failed. Please try again.', 'error');
+        })
+        .finally(() => {
+            setTimeout(() => {
+                if (btn) { btn.disabled = false; btn.textContent = originalText; btn.style.background = ''; }
+            }, 1500);
+        });
 };
+
+/* ── boot ── */
+window.addEventListener('load', () => {
+    fetchSummary();
+    setInterval(fetchSummary, DASH_POLL_MS);
+});

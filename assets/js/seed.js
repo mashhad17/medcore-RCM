@@ -11,6 +11,14 @@ function medcoreFormatDateKey(d) {
 }
 
 function medcoreDefaultAppointments(todayStr) {
+    // Demo/seed clinical data has been removed for production. The app now
+    // reads real state from the database (empty until real records exist).
+    // The fabricated patient set below is retained only as commented
+    // reference and is never returned.
+    return [];
+}
+
+function medcoreDefaultAppointments_DISABLED_REFERENCE(todayStr) {
     return [
         {
             id: 'app-1', patientName: 'Kavya Shanil', mrn: 'MRN-2026-0009', nid: '784-1994-103115-2', phone: '+971 50 765 4321', resident: 'yes', doctorName: 'Dr. Mohammed (General Practice)', colIndex: 0, date: todayStr, startHour: 9, startMinute: 30, duration: 45, reason: 'Routine checkup and vitals assessment.', status: 'arrived',
@@ -79,10 +87,6 @@ function medcoreDefaultAppointments(todayStr) {
 }
 
 function medcoreSeedAppointmentsIfEmpty() {
-    try {
-        const stored = localStorage.getItem('medcore_appointments');
-        if (stored && JSON.parse(stored).length > 0) return false;
-        localStorage.setItem('medcore_appointments', JSON.stringify(medcoreDefaultAppointments(medcoreFormatDateKey(new Date()))));
-        return true;
-    } catch (e) { return false; }
+    // No-op in production: fabricated demo patients are no longer seeded.
+    return false;
 }

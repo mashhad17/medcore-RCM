@@ -598,3 +598,193 @@ function mc_save_activity($pdo, $arr)
     }
     $pdo->commit();
 }
+
+/* ============================================================
+   DASHBOARD (Reception Shift Control) — server-computed state
+   These power api/dashboard/summary.php, api/walkin.php and
+   api/activity/clear.php. Everything is derived live from the
+   database; the front-end no longer reads localStorage.
+   ============================================================ */
+
+// Today's appointment metrics. A patient physically sitting in the
+// live queue counts as checked-in even if the appointment status lags
+// (mirrors the old client-side updateMetricCounts logic).
+function mc_dashboard_metrics($pdo)
+{
+    $rows = $pdo->query(
+        "SELECT a.status AS status, (lq.patient_id IS NOT NULL) AS in_queue
+         FROM appointments a
+         LEFT JOIN (SELECT DISTINCT patient_id FROM live_queue) lq
+                ON lq.patient_id = a.patient_id
+         WHERE a.appt_date = CURDATE()"
+    )->fetchAll();
+
+    $c = ['total' => 0, 'checkedin' => 0, 'pending' => 0, 'cancelled' => 0, 'completed' => 0];
+    foreach ($rows as $r) {
+        $c['total']++;
+        $s = strtolower((string)$r['status']);
+        if ($s === 'cancelled') {
+            $c['cancelled']++;
+        } elseif ($s === 'completed' || $s === 'past') {
+            $c['completed']++;
+        } elseif ($s === 'arrived' || (int)$r['in_queue'] === 1) {
+            $c['checkedin']++;
+        } else {
+            $c['pending']++;
+        }
+    }
+
+    // Walk-in/queue entries with no matching appointment today (edge case).
+    $extra = (int)$pdo->query(
+        "SELECT COUNT(DISTINCT lq.patient_id)
+         FROM live_queue lq
+         WHERE lq.patient_id IS NOT NULL
+           AND lq.patient_id NOT IN
+               (SELECT patient_id FROM appointments WHERE appt_date = CURDATE())"
+    )->fetchColumn();
+    $c['total']    += $extra;
+    $c['checkedin'] += $extra;
+
+    return $c;
+}
+
+// Real-time provider board derived from doctors + today's appointments
+// + live queue. Replaces the client-side getRealTimeProviderStatus().
+// Clinic hours assumed 08:00–17:00 (Gulf time; see config.php).
+function mc_provider_status($pdo)
+{
+    $nowRow  = $pdo->query("SELECT HOUR(NOW()) AS h, (HOUR(NOW())*60 + MINUTE(NOW())) AS m")->fetch();
+    $nowHour = (int)$nowRow['h'];
+    $nowMins = (int)$nowRow['m'];
+
+    $docs = $pdo->query(
+        "SELECT d.id, d.full_name, dep.name AS dept, d.manual_status
+         FROM doctors d
+         JOIN departments dep ON d.department_id = dep.id
+         WHERE d.is_active = 1
+         ORDER BY d.col_index, d.id"
+    )->fetchAll();
+
+    // Doctors with an appointment active right now.
+    $active = $pdo->prepare(
+        "SELECT DISTINCT doctor_id FROM appointments
+         WHERE appt_date = CURDATE()
+           AND status NOT IN ('cancelled','completed','past')
+           AND (start_hour*60 + start_minute) <= ?
+           AND (start_hour*60 + start_minute + duration_min) > ?"
+    );
+    $active->execute([$nowMins, $nowMins]);
+    $activeDocs = array_flip(array_map('intval', array_column($active->fetchAll(), 'doctor_id')));
+
+    // Doctors with someone waiting in their queue (matched by label).
+    $queued = [];
+    foreach ($pdo->query("SELECT DISTINCT doctor_label FROM live_queue")->fetchAll() as $q) {
+        if ($q['doctor_label'] !== null && $q['doctor_label'] !== '') $queued[$q['doctor_label']] = true;
+    }
+
+    $out = [];
+    foreach ($docs as $d) {
+        $manual = trim((string)($d['manual_status'] ?? ''));
+        if ($manual !== '') {
+            $status = $manual;
+        } elseif (isset($activeDocs[(int)$d['id']]) || isset($queued[$d['full_name']])) {
+            $status = 'In Consultation';
+        } elseif ($nowHour < 8 || $nowHour >= 17) {
+            $status = 'Off-Shift';
+        } else {
+            $status = 'Available';
+        }
+        $out[] = [
+            'name'   => $d['full_name'],
+            'dept'   => $d['dept'],
+            'status' => $status,
+        ];
+    }
+    return $out;
+}
+
+// Waiting-room list ordered by longest wait, with server-computed minutes.
+function mc_next_up($pdo, $limit = 5)
+{
+    $limit = max(1, (int)$limit);
+    $rows = $pdo->query(
+        "SELECT p.full_name AS patient_name, q.doctor_label AS doctor_name, q.checked_in_at
+         FROM live_queue q
+         JOIN patients p ON q.patient_id = p.id
+         ORDER BY q.checked_in_at ASC
+         LIMIT $limit"
+    )->fetchAll();
+
+    $now = time();
+    $out = [];
+    foreach ($rows as $r) {
+        $t = $r['checked_in_at'] ? strtotime($r['checked_in_at']) : 0;
+        $mins = $t ? (int)floor(($now - $t) / 60) : 0;
+        if ($mins < 0) $mins = 0;
+        $out[] = [
+            'patient_name'      => $r['patient_name'],
+            'doctor_name'       => $r['doctor_name'],
+            'wait_time_minutes' => $mins,
+        ];
+    }
+    return $out;
+}
+
+// Lightweight list of today's appointments for the metric drill-down
+// modal. Includes an in_queue flag so "Checked-In" can include patients
+// physically waiting even if their status lags.
+function mc_today_appointments($pdo)
+{
+    $rows = $pdo->query(
+        "SELECT a.id,
+                p.full_name AS patientName,
+                p.mrn,
+                d.full_name AS doctorName,
+                a.start_hour   AS startHour,
+                a.start_minute AS startMinute,
+                a.status,
+                (lq.patient_id IS NOT NULL) AS inQueue
+         FROM appointments a
+         JOIN patients p ON a.patient_id = p.id
+         JOIN doctors  d ON a.doctor_id  = d.id
+         LEFT JOIN (SELECT DISTINCT patient_id FROM live_queue) lq
+                ON lq.patient_id = a.patient_id
+         WHERE a.appt_date = CURDATE()
+         ORDER BY a.start_hour, a.start_minute, a.id"
+    )->fetchAll();
+
+    return array_map(function ($r) {
+        return [
+            'patientName' => $r['patientName'],
+            'mrn'         => $r['mrn'],
+            'doctorName'  => $r['doctorName'],
+            'startHour'   => (int)$r['startHour'],
+            'startMinute' => (int)$r['startMinute'],
+            'status'      => $r['status'],
+            'inQueue'     => (int)$r['inQueue'] === 1,
+        ];
+    }, $rows);
+}
+
+// Append one event to the activity log (UAE-stamped display time).
+function mc_log_event($pdo, $message, $author = 'Reception', $type = null)
+{
+    $stmt = $pdo->prepare(
+        "INSERT INTO activity_log (log_time, message, author, event_type)
+         VALUES (DATE_FORMAT(NOW(), '%l:%i %p'), ?, ?, ?)"
+    );
+    $stmt->execute([$message, $author, $type]);
+}
+
+// Latest events, newest first.
+function mc_recent_activity($pdo, $limit = 20)
+{
+    $limit = max(1, (int)$limit);
+    $rows = $pdo->query(
+        "SELECT log_time AS time, message AS text, author, event_type
+         FROM activity_log
+         ORDER BY created_at DESC, id DESC
+         LIMIT $limit"
+    )->fetchAll();
+    return $rows;
+}
