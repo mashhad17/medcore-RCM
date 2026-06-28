@@ -63,12 +63,8 @@
     };
 
     window.getRealTimeProviderStatus = function() {
-        const apps = JSON.parse(localStorage.getItem('medcore_appointments') || '[]');
         const d = new Date();
-        const todayStr = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-        const todaysApps = apps.filter(a => a.date === todayStr);
-
-        const currentTotalMinutes = d.getHours() * 60 + d.getMinutes();
+        const hour = d.getHours();
 
         const doctors = [
             { name: 'Dr. Mohammed', dept: 'General Practice', key: 'Dr. Mohammed (General Practice)' },
@@ -78,23 +74,22 @@
             { name: 'Dr. Ali', dept: 'Orthopedics', key: 'Dr. Ali (Orthopedics)' }
         ];
 
-        return doctors.map(doc => {
-            const activeApp = todaysApps.find(a => {
-                if (a.doctorName !== doc.key) return false;
-                if (a.status === 'completed' || a.status === 'cancelled') return false;
-                const startMins = (a.startHour * 60) + (a.startMinute || 0);
-                const endMins = startMins + (a.duration || 30);
-                return currentTotalMinutes >= startMins && currentTotalMinutes < endMins;
-            });
+        // A doctor is "In Consultation" when a patient has been sent to them and
+        // is in the Consultation lane of the live queue (stage === 'consultation').
+        // Same definition the dashboard/server use, so all surfaces agree.
+        const queue = JSON.parse(localStorage.getItem('medcore_live_queue') || '[]');
+        const inConsult = new Set(
+            queue.filter(q => q.stage === 'consultation')
+                 .map(q => (q.doctor || '').split(' (')[0].trim())
+        );
 
-            if (activeApp) {
+        return doctors.map(doc => {
+            if (inConsult.has(doc.name)) {
                 return { ...doc, status: 'In Consultation', dotClass: 'blue' };
             }
-
-            if (d.getHours() < 8 || d.getHours() >= 17) {
+            if (hour < 8 || hour >= 23) {
                 return { ...doc, status: 'Off-Shift', dotClass: 'gray' };
             }
-
             return { ...doc, status: 'Available', dotClass: 'green' };
         });
     };

@@ -55,7 +55,9 @@ function fmtTime(app) {
 
 /* ── data fetch + render orchestration ── */
 function fetchSummary() {
-    return fetch('api/dashboard/summary.php', { headers: { 'Accept': 'application/json' } })
+    const date = (typeof medcoreViewDate === 'function') ? medcoreViewDate() : null;
+    const url = 'api/dashboard/summary.php' + (date ? ('?date=' + encodeURIComponent(date)) : '');
+    return fetch(url, { headers: { 'Accept': 'application/json' } })
         .then(res => {
             if (!res.ok) throw new Error('HTTP ' + res.status);
             return res.json();
@@ -65,8 +67,9 @@ function fetchSummary() {
             dashState.summary = data;
             dashState.loaded = true;
             hideDashboardError();
+            applyDateContext(data.isToday);
             renderMetrics(data.metrics);
-            renderNextUp(data.nextUp);
+            renderNextUp(data.nextUp, data.isToday);
             renderActivity(data.activity);
             renderProviders(data.providers);
         })
@@ -100,8 +103,20 @@ function renderMetrics(metrics) {
     });
 }
 
-/* ── Next Up (Waiting Room) ── */
-function renderNextUp(list) {
+/* Adjust labels / controls for the current view date (live today vs history). */
+function applyDateContext(isToday) {
+    const title = document.getElementById('nextUpTitle');
+    if (title) title.textContent = isToday ? 'Next Up (Waiting Room)' : 'Appointments on this day';
+    const walk = document.getElementById('walkInPanel');
+    if (walk) {
+        walk.style.opacity = isToday ? '' : '0.5';
+        walk.style.pointerEvents = isToday ? '' : 'none';
+        walk.title = isToday ? '' : 'Walk-ins can only be added for today';
+    }
+}
+
+/* ── Next Up (Waiting Room) / Appointments on a past day ── */
+function renderNextUp(list, isToday) {
     const container = document.getElementById('miniQueueTracker');
     if (!container) return;
 
@@ -110,7 +125,26 @@ function renderNextUp(list) {
         return;
     }
     if (!Array.isArray(list) || list.length === 0) {
-        container.innerHTML = emptyRow('Waiting room is empty');
+        container.innerHTML = emptyRow(isToday === false ? 'No appointments on this day' : 'Waiting room is empty');
+        return;
+    }
+
+    // Past day: read-only list of that day's appointments with time + status.
+    if (isToday === false) {
+        container.innerHTML = list.map(a => {
+            const st = (a.status || '').toLowerCase();
+            let cls = 'time-green';
+            if (st === 'cancelled') cls = 'time-red';
+            else if (st === 'completed' || st === 'past') cls = 'time-yellow';
+            return `
+            <div class="queue-tracker-item">
+                <div class="queue-tracker-info">
+                    <div class="queue-tracker-name">${escapeHtml(a.patient_name)}</div>
+                    <div class="queue-tracker-doc">${escapeHtml(a.time_label || '')} · ${escapeHtml(shortDoc(a.doctor_name))}</div>
+                </div>
+                <div class="queue-tracker-time ${cls}" style="text-transform:capitalize;">${escapeHtml(a.status || '')}</div>
+            </div>`;
+        }).join('');
         return;
     }
 

@@ -109,8 +109,86 @@ function mc_lookup_doctor($pdo, $label)
 }
 
 /* ---------- APPOINTMENTS ---------- */
+/**
+ * Self-healing schema for the patient-flow fields that the UI added after the
+ * original schema was created. Idempotent and cheap: adds each column only if
+ * missing. Must run OUTSIDE a transaction (ALTER TABLE implicitly commits).
+ */
+function mc_ensure_flow_columns($pdo)
+{
+    static $done = false;
+    if ($done) return;
+    $done = true;
+
+    $ensure = function ($table, $column, $ddl) use ($pdo) {
+        try {
+            $stmt = $pdo->prepare("SHOW COLUMNS FROM `$table` LIKE ?");
+            $stmt->execute([$column]);
+            if (!$stmt->fetch()) {
+                $pdo->exec("ALTER TABLE `$table` ADD COLUMN $ddl");
+            }
+        } catch (PDOException $e) {
+            // Table may not exist yet in a partially-set-up DB; ignore.
+        }
+    };
+
+    // Appointment → "Send to Doctor" lifecycle flag.
+    $ensure('appointments', 'sent_to_doctor',        "sent_to_doctor TINYINT(1) NOT NULL DEFAULT 0");
+    $ensure('appointments', 'portal_appointment_id', "portal_appointment_id INT NULL");
+    // Original booked duration, kept when the doctor portal extends a consult.
+    $ensure('appointments', 'booked_duration_min',   "booked_duration_min INT NULL");
+
+    // Live-queue lane (Waiting → Consultation → Billing) + linkage.
+    $ensure('live_queue', 'stage',              "stage VARCHAR(20) NOT NULL DEFAULT 'waiting'");
+    $ensure('live_queue', 'consult_started_at', "consult_started_at VARCHAR(40) NULL");
+    $ensure('live_queue', 'appt_id',            "appt_id VARCHAR(64) NULL");
+}
+
+/**
+ * Pull consultation durations back from the Doctor Portal (medical_center DB).
+ *
+ * When a doctor extends a consult (e.g. 45 → 90 min) on the portal, reception
+ * needs to see the longer block on the scheduler and bill the extra time. The
+ * portal links each consult to its reception appointment via `ext_ref`
+ * (= the medcore appointment id), so we match on that.
+ *
+ * - The original booked duration is captured once into booked_duration_min
+ *   before we overwrite duration_min, so the invoice can show "extended".
+ * - Runs before localStorage is primed (bootstrap.php), so the front-end sees
+ *   the new value and subsequent reception writes preserve it.
+ * Silent no-op if the portal DB isn't reachable.
+ */
+function mc_sync_durations_from_portal($pdo)
+{
+    mc_ensure_flow_columns($pdo);
+    try {
+        $portal = new PDO(
+            'mysql:host=127.0.0.1;dbname=medical_center;charset=utf8mb4',
+            'root',
+            '',
+            [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC]
+        );
+        $rows = $portal->query(
+            "SELECT ext_ref, duration FROM appointments WHERE ext_ref IS NOT NULL AND ext_ref <> ''"
+        )->fetchAll();
+    } catch (Throwable $e) {
+        return; // portal not set up / unreachable — leave reception data as-is
+    }
+
+    $capture = $pdo->prepare("UPDATE appointments SET booked_duration_min = duration_min WHERE id = ? AND booked_duration_min IS NULL");
+    $update  = $pdo->prepare("UPDATE appointments SET duration_min = ? WHERE id = ? AND duration_min <> ?");
+    foreach ($rows as $r) {
+        $ext = (string)$r['ext_ref'];
+        $dur = (int)$r['duration'];
+        if ($dur <= 0) continue;
+        $capture->execute([$ext]);          // remember the original duration once
+        $update->execute([$dur, $ext, $dur]); // adopt the portal's duration
+    }
+}
+
 function mc_get_appointments($pdo)
 {
+    mc_ensure_flow_columns($pdo);
     $sql = "SELECT a.*, p.mrn, p.full_name, p.national_id, p.dob, p.phone,
                    p.is_resident, p.blood_group,
                    d.full_name AS doctor_name, d.col_index
@@ -257,12 +335,15 @@ function mc_get_appointments($pdo)
             'startHour'       => (int)$r['start_hour'],
             'startMinute'     => (int)$r['start_minute'],
             'duration'        => (int)$r['duration_min'],
+            'bookedDuration'  => isset($r['booked_duration_min']) && $r['booked_duration_min'] !== null ? (int)$r['booked_duration_min'] : null,
             'reason'          => $r['reason'],
             'status'          => $r['status'],
             'confirmStatus'   => ($r['confirm_status'] === '' ? null : $r['confirm_status']),
             'overdue'         => $r['overdue_amount'] !== null ? (float)$r['overdue_amount'] : 0,
             'createdDate'     => $r['created_date'],
             'modifiedDate'    => $r['modified_date'],
+            'sentToDoctor'    => !empty($r['sent_to_doctor']),
+            'portalAppointmentId' => isset($r['portal_appointment_id']) && $r['portal_appointment_id'] !== null ? (int)$r['portal_appointment_id'] : null,
             'clinicalProfile' => $clinicalProfile,
             'invoice'         => $invoice,
             'consents'        => $consents,
@@ -273,6 +354,7 @@ function mc_get_appointments($pdo)
 
 function mc_save_appointments($pdo, $arr)
 {
+    mc_ensure_flow_columns($pdo);   // before the transaction (ALTER auto-commits)
     $pdo->beginTransaction();
 
     // Wipe appointment-owned data. Deleting appointments cascades to
@@ -289,8 +371,9 @@ function mc_save_appointments($pdo, $arr)
     $insAppt = $pdo->prepare(
         "INSERT INTO appointments
          (id, patient_id, doctor_id, appt_date, start_hour, start_minute, duration_min,
-          reason, status, confirm_status, overdue_amount, created_date, modified_date)
-         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)"
+          reason, status, confirm_status, overdue_amount, created_date, modified_date,
+          sent_to_doctor, portal_appointment_id, booked_duration_min)
+         VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)"
     );
     $insAll = $pdo->prepare("INSERT INTO patient_allergies (patient_id, allergen) VALUES (?,?)");
     $insCon = $pdo->prepare("INSERT INTO patient_conditions (patient_id, condition_name) VALUES (?,?)");
@@ -353,6 +436,9 @@ function mc_save_appointments($pdo, $arr)
             isset($a['overdue']) ? $a['overdue'] : 0,
             $a['createdDate'] ?? null,
             $a['modifiedDate'] ?? null,
+            !empty($a['sentToDoctor']) ? 1 : 0,
+            isset($a['portalAppointmentId']) ? $a['portalAppointmentId'] : null,
+            isset($a['bookedDuration']) ? $a['bookedDuration'] : null,
         ]);
 
         // Patient-scoped clinical data: write once per patient.
@@ -527,8 +613,24 @@ function mc_save_payments($pdo, $arr)
 }
 
 /* ---------- LIVE QUEUE ---------- */
+/**
+ * Drop live-queue entries left over from previous days. A patient leaves the
+ * queue only when discharged (payment collected); anyone still in it at end of
+ * day would otherwise carry over forever with a runaway wait time. The queue is
+ * a "today" board, so prune anything checked in before today.
+ *
+ * checked_in_at is an ISO timestamp string; comparing its YYYY-MM-DD prefix to
+ * CURDATE() is safe within clinic hours (UTC date == local date 8 AM–11 PM).
+ */
+function mc_purge_stale_queue($pdo)
+{
+    mc_ensure_flow_columns($pdo);
+    $pdo->exec("DELETE FROM live_queue WHERE checked_in_at IS NOT NULL AND checked_in_at <> '' AND LEFT(checked_in_at, 10) < CURDATE()");
+}
+
 function mc_get_queue($pdo)
 {
+    mc_ensure_flow_columns($pdo);
     $sql = "SELECT lq.*, p.mrn, p.full_name
             FROM live_queue lq
             LEFT JOIN patients p ON lq.patient_id = p.id
@@ -537,11 +639,14 @@ function mc_get_queue($pdo)
     $out = [];
     foreach ($rows as $r) {
         $out[] = [
-            'mrn'         => $r['mrn'],
-            'patientName' => $r['full_name'],
-            'doctor'      => $r['doctor_label'],
-            'reason'      => $r['reason'],
-            'checkedInAt' => $r['checked_in_at'],
+            'id'               => $r['appt_id'] ?? null,
+            'mrn'              => $r['mrn'],
+            'patientName'      => $r['full_name'],
+            'doctor'           => $r['doctor_label'],
+            'reason'           => $r['reason'],
+            'checkedInAt'      => $r['checked_in_at'],
+            'stage'            => $r['stage'] ?? 'waiting',
+            'consultStartedAt' => $r['consult_started_at'] ?? null,
         ];
     }
     return $out;
@@ -549,10 +654,11 @@ function mc_get_queue($pdo)
 
 function mc_save_queue($pdo, $arr)
 {
+    mc_ensure_flow_columns($pdo);   // before the transaction (ALTER auto-commits)
     $pdo->beginTransaction();
     $pdo->exec("DELETE FROM live_queue");
     $ins = $pdo->prepare(
-        "INSERT INTO live_queue (patient_id, doctor_label, reason, checked_in_at) VALUES (?,?,?,?)"
+        "INSERT INTO live_queue (patient_id, doctor_label, reason, checked_in_at, stage, consult_started_at, appt_id) VALUES (?,?,?,?,?,?,?)"
     );
     foreach ($arr as $q) {
         $pid = mc_upsert_patient($pdo, [
@@ -564,6 +670,9 @@ function mc_save_queue($pdo, $arr)
             $q['doctor'] ?? '',
             $q['reason'] ?? '',
             $q['checkedInAt'] ?? '',
+            $q['stage'] ?? 'waiting',
+            $q['consultStartedAt'] ?? null,
+            $q['id'] ?? null,
         ]);
     }
     $pdo->commit();
@@ -609,15 +718,23 @@ function mc_save_activity($pdo, $arr)
 // Today's appointment metrics. A patient physically sitting in the
 // live queue counts as checked-in even if the appointment status lags
 // (mirrors the old client-side updateMetricCounts logic).
-function mc_dashboard_metrics($pdo)
+function mc_dashboard_metrics($pdo, $date = null)
 {
-    $rows = $pdo->query(
-        "SELECT a.status AS status, (lq.patient_id IS NOT NULL) AS in_queue
+    // Resolve the target day (defaults to the clinic's local today).
+    $date = ($date && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) ? $date : $pdo->query("SELECT CURDATE()")->fetchColumn();
+    $isToday = ($date === $pdo->query("SELECT CURDATE()")->fetchColumn());
+
+    // The live-queue "in_queue" flag only makes sense for today's board.
+    $stmt = $pdo->prepare(
+        "SELECT a.status AS status,
+                (" . ($isToday ? "lq.patient_id IS NOT NULL" : "0") . ") AS in_queue
          FROM appointments a
          LEFT JOIN (SELECT DISTINCT patient_id FROM live_queue) lq
                 ON lq.patient_id = a.patient_id
-         WHERE a.appt_date = CURDATE()"
-    )->fetchAll();
+         WHERE a.appt_date = ?"
+    );
+    $stmt->execute([$date]);
+    $rows = $stmt->fetchAll();
 
     $c = ['total' => 0, 'checkedin' => 0, 'pending' => 0, 'cancelled' => 0, 'completed' => 0];
     foreach ($rows as $r) {
@@ -634,18 +751,51 @@ function mc_dashboard_metrics($pdo)
         }
     }
 
-    // Walk-in/queue entries with no matching appointment today (edge case).
-    $extra = (int)$pdo->query(
-        "SELECT COUNT(DISTINCT lq.patient_id)
-         FROM live_queue lq
-         WHERE lq.patient_id IS NOT NULL
-           AND lq.patient_id NOT IN
-               (SELECT patient_id FROM appointments WHERE appt_date = CURDATE())"
-    )->fetchColumn();
-    $c['total']    += $extra;
-    $c['checkedin'] += $extra;
+    // Walk-in/queue entries with no matching appointment today (today only).
+    if ($isToday) {
+        $extra = (int)$pdo->query(
+            "SELECT COUNT(DISTINCT lq.patient_id)
+             FROM live_queue lq
+             WHERE lq.patient_id IS NOT NULL
+               AND lq.patient_id NOT IN
+                   (SELECT patient_id FROM appointments WHERE appt_date = CURDATE())"
+        )->fetchColumn();
+        $c['total']    += $extra;
+        $c['checkedin'] += $extra;
+    }
 
     return $c;
+}
+
+/**
+ * Appointments scheduled on a given day (used as the dashboard's "list" when
+ * viewing a past date, where the live waiting room doesn't apply). Shaped like
+ * mc_next_up so the same renderer can show it.
+ */
+function mc_appointments_on($pdo, $date)
+{
+    $stmt = $pdo->prepare(
+        "SELECT p.full_name AS patient_name, d.full_name AS doctor_name,
+                a.start_hour, a.start_minute, a.status
+         FROM appointments a
+         JOIN patients p ON a.patient_id = p.id
+         JOIN doctors  d ON a.doctor_id  = d.id
+         WHERE a.appt_date = ?
+         ORDER BY a.start_hour, a.start_minute, a.id"
+    );
+    $stmt->execute([$date]);
+    $out = [];
+    foreach ($stmt->fetchAll() as $r) {
+        $h = (int)$r['start_hour']; $m = (int)$r['start_minute'];
+        $ampm = $h >= 12 ? 'PM' : 'AM'; $h12 = ($h % 12) ?: 12;
+        $out[] = [
+            'patient_name' => $r['patient_name'],
+            'doctor_name'  => $r['doctor_name'],
+            'time_label'   => sprintf('%d:%02d %s', $h12, $m, $ampm),
+            'status'       => $r['status'],
+        ];
+    }
+    return $out;
 }
 
 // Real-time provider board derived from doctors + today's appointments
@@ -653,9 +803,8 @@ function mc_dashboard_metrics($pdo)
 // Clinic hours assumed 08:00–17:00 (Gulf time; see config.php).
 function mc_provider_status($pdo)
 {
-    $nowRow  = $pdo->query("SELECT HOUR(NOW()) AS h, (HOUR(NOW())*60 + MINUTE(NOW())) AS m")->fetch();
-    $nowHour = (int)$nowRow['h'];
-    $nowMins = (int)$nowRow['m'];
+    mc_ensure_flow_columns($pdo);
+    $nowHour = (int)$pdo->query("SELECT HOUR(NOW())")->fetchColumn();
 
     $docs = $pdo->query(
         "SELECT d.id, d.full_name, dep.name AS dept, d.manual_status
@@ -665,21 +814,13 @@ function mc_provider_status($pdo)
          ORDER BY d.col_index, d.id"
     )->fetchAll();
 
-    // Doctors with an appointment active right now.
-    $active = $pdo->prepare(
-        "SELECT DISTINCT doctor_id FROM appointments
-         WHERE appt_date = CURDATE()
-           AND status NOT IN ('cancelled','completed','past')
-           AND (start_hour*60 + start_minute) <= ?
-           AND (start_hour*60 + start_minute + duration_min) > ?"
-    );
-    $active->execute([$nowMins, $nowMins]);
-    $activeDocs = array_flip(array_map('intval', array_column($active->fetchAll(), 'doctor_id')));
-
-    // Doctors with someone waiting in their queue (matched by label).
-    $queued = [];
-    foreach ($pdo->query("SELECT DISTINCT doctor_label FROM live_queue")->fetchAll() as $q) {
-        if ($q['doctor_label'] !== null && $q['doctor_label'] !== '') $queued[$q['doctor_label']] = true;
+    // A doctor is "In Consultation" when a patient has been sent to them and is
+    // sitting in the Consultation lane of the live queue (stage = 'consultation').
+    // This is the single, synced source of truth shared with the scheduler header
+    // and the Live Clinic Queue, so every surface agrees.
+    $inConsult = [];
+    foreach ($pdo->query("SELECT DISTINCT doctor_label FROM live_queue WHERE stage = 'consultation'")->fetchAll() as $q) {
+        if (!empty($q['doctor_label'])) $inConsult[$q['doctor_label']] = true;
     }
 
     $out = [];
@@ -687,9 +828,9 @@ function mc_provider_status($pdo)
         $manual = trim((string)($d['manual_status'] ?? ''));
         if ($manual !== '') {
             $status = $manual;
-        } elseif (isset($activeDocs[(int)$d['id']]) || isset($queued[$d['full_name']])) {
+        } elseif (isset($inConsult[$d['full_name']])) {
             $status = 'In Consultation';
-        } elseif ($nowHour < 8 || $nowHour >= 17) {
+        } elseif ($nowHour < 8 || $nowHour >= 23) {   // clinic day: 8 AM → 11 PM
             $status = 'Off-Shift';
         } else {
             $status = 'Available';
@@ -711,6 +852,7 @@ function mc_next_up($pdo, $limit = 5)
         "SELECT p.full_name AS patient_name, q.doctor_label AS doctor_name, q.checked_in_at
          FROM live_queue q
          JOIN patients p ON q.patient_id = p.id
+         WHERE LEFT(q.checked_in_at, 10) = CURDATE()
          ORDER BY q.checked_in_at ASC
          LIMIT $limit"
     )->fetchAll();
@@ -733,9 +875,10 @@ function mc_next_up($pdo, $limit = 5)
 // Lightweight list of today's appointments for the metric drill-down
 // modal. Includes an in_queue flag so "Checked-In" can include patients
 // physically waiting even if their status lags.
-function mc_today_appointments($pdo)
+function mc_today_appointments($pdo, $date = null)
 {
-    $rows = $pdo->query(
+    $date = ($date && preg_match('/^\d{4}-\d{2}-\d{2}$/', $date)) ? $date : $pdo->query("SELECT CURDATE()")->fetchColumn();
+    $stmt = $pdo->prepare(
         "SELECT a.id,
                 p.full_name AS patientName,
                 p.mrn,
@@ -749,9 +892,11 @@ function mc_today_appointments($pdo)
          JOIN doctors  d ON a.doctor_id  = d.id
          LEFT JOIN (SELECT DISTINCT patient_id FROM live_queue) lq
                 ON lq.patient_id = a.patient_id
-         WHERE a.appt_date = CURDATE()
+         WHERE a.appt_date = ?
          ORDER BY a.start_hour, a.start_minute, a.id"
-    )->fetchAll();
+    );
+    $stmt->execute([$date]);
+    $rows = $stmt->fetchAll();
 
     return array_map(function ($r) {
         return [

@@ -12,12 +12,19 @@ header('Content-Type: application/json');
 try {
     $pdo = medcore_db();
 
+    $today = $pdo->query("SELECT CURDATE()")->fetchColumn();
+    $date  = (isset($_GET['date']) && preg_match('/^\d{4}-\d{2}-\d{2}$/', $_GET['date'])) ? $_GET['date'] : $today;
+    $isToday = ($date === $today);
+
     echo json_encode([
-        'metrics'      => mc_dashboard_metrics($pdo),
+        'date'         => $date,
+        'isToday'      => $isToday,
+        'metrics'      => mc_dashboard_metrics($pdo, $date),
         'providers'    => mc_provider_status($pdo),
-        'nextUp'       => mc_next_up($pdo, 5),
+        // Today shows the live waiting room; a past day shows that day's appointments.
+        'nextUp'       => $isToday ? mc_next_up($pdo, 5) : mc_appointments_on($pdo, $date),
         'activity'     => mc_recent_activity($pdo, 20),
-        'appointments' => mc_today_appointments($pdo),
+        'appointments' => mc_today_appointments($pdo, $date),
         'generatedAt'  => date('c'),
     ]);
 } catch (Throwable $e) {

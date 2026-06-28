@@ -47,13 +47,70 @@
 
         .panel {
             width: 44%;
-            background: #E4EBF4;
+            background: linear-gradient(155deg, #EEF4FA 0%, #DEE9F5 48%, #CFDDEF 100%);
             position: relative;
             overflow: hidden;
             display: flex;
             flex-direction: column;
             justify-content: space-between;
             padding: 3.25rem 3.5rem 3rem;
+        }
+
+        .panel-glow {
+            position: absolute;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        .panel-glow.one {
+            top: -120px; right: -100px; width: 380px; height: 380px;
+            background: radial-gradient(circle, rgba(79,124,172,0.18) 0%, transparent 70%);
+        }
+        .panel-glow.two {
+            bottom: -140px; left: -120px; width: 420px; height: 420px;
+            background: radial-gradient(circle, rgba(139,92,246,0.10) 0%, transparent 70%);
+        }
+
+        /* Feature highlights (replaces the headline stats) */
+        .features {
+            display: flex;
+            flex-direction: column;
+            gap: 1.1rem;
+            margin-bottom: 1.75rem;
+        }
+        .feature {
+            display: flex;
+            align-items: flex-start;
+            gap: 13px;
+        }
+        .feature-ico {
+            width: 38px;
+            height: 38px;
+            border-radius: 10px;
+            flex-shrink: 0;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: #4F7CAC;
+            background: rgba(255, 255, 255, 0.65);
+            border: 1px solid rgba(79, 124, 172, 0.16);
+            box-shadow: 0 2px 8px rgba(79, 124, 172, 0.10);
+        }
+        .feature-title {
+            font-size: 0.875rem;
+            font-weight: 600;
+            color: #1F2937;
+            line-height: 1.3;
+        }
+        .feature-sub {
+            font-size: 0.75rem;
+            color: #6B7280;
+            line-height: 1.45;
+            margin-top: 1px;
+        }
+        .status-row {
+            display: flex;
+            align-items: center;
+            gap: 7px;
         }
 
         .panel-mark {
@@ -110,7 +167,7 @@
 
         .seg {
             display: grid;
-            grid-template-columns: repeat(2, 1fr);
+            grid-template-columns: repeat(3, 1fr);
             background: var(--bg-canvas, #F7F9FC);
             border: 1px solid var(--border-light, #E5EAF0);
             border-radius: 8px;
@@ -320,6 +377,8 @@
         <div class="panel">
 
             <div class="panel-vignette" aria-hidden="true"></div>
+            <div class="panel-glow one" aria-hidden="true"></div>
+            <div class="panel-glow two" aria-hidden="true"></div>
 
             <svg class="panel-mark" viewBox="0 0 320 320" fill="none" xmlns="http://www.w3.org/2000/svg"
                 aria-hidden="true">
@@ -358,42 +417,7 @@
                 </p>
             </div>
 
-            <div style="position:relative; z-index:1;">
-                <div class="sdivider">
-                    <div style="display:grid; grid-template-columns:1fr 1fr 1fr; gap:1.5rem; margin-bottom:1.625rem;">
-                        <div>
-                            <p class="lora"
-                                style="font-size:1.5rem; color:#1F2937; margin-bottom:4px; font-weight:500; line-height:1;">
-                                12 k+</p>
-                            <p
-                                style="font-size:0.6875rem; color:#6B7280; line-height:1.45; letter-spacing:0.02em; font-weight:500;">
-                                Active patients</p>
-                        </div>
-                        <div>
-                            <p class="lora"
-                                style="font-size:1.5rem; color:#1F2937; margin-bottom:4px; font-weight:500; line-height:1;">
-                                840</p>
-                            <p
-                                style="font-size:0.6875rem; color:#6B7280; line-height:1.45; letter-spacing:0.02em; font-weight:500;">
-                                Staff members</p>
-                        </div>
-                        <div>
-                            <p class="lora"
-                                style="font-size:1.5rem; color:#1F2937; margin-bottom:4px; font-weight:500; line-height:1;">
-                                18</p>
-                            <p
-                                style="font-size:0.6875rem; color:#6B7280; line-height:1.45; letter-spacing:0.02em; font-weight:500;">
-                                Departments</p>
-                        </div>
-                    </div>
-
-                    <div style="display:flex; align-items:center; gap:7px;">
-                        <span class="sdot"></span>
-                        <span style="font-size:0.75rem; color:#6B7280; letter-spacing:0.01em; font-weight:500;">All
-                            systems operational</span>
-                    </div>
-                </div>
-            </div>
+            <div style="position:relative; z-index:1;"></div>
 
         </div>
 
@@ -446,6 +470,15 @@
                                 <line x1="3" y1="10" x2="21" y2="10"></line>
                             </svg>
                             Receptionist
+                        </button>
+
+                        <button class="seg-item" onclick="setRole(this)" aria-pressed="false">
+                            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                                stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"></path>
+                                <path d="M9 12l2 2 4-4"></path>
+                            </svg>
+                            Supervisor
                         </button>
 
                     </div>

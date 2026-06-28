@@ -15,6 +15,12 @@ require_once __DIR__ . '/lib.php';
 $boot = ['appointments' => null, 'payments' => null, 'queue' => null, 'activity' => null];
 try {
     $pdo = medcore_db();
+    // Pull any consultation durations the Doctor Portal extended back into
+    // reception before priming the page, so the scheduler shows the right block.
+    mc_sync_durations_from_portal($pdo);
+    // Clear out yesterday's unfinished queue entries so the live board and the
+    // dashboard reflect today only.
+    mc_purge_stale_queue($pdo);
     $boot['appointments'] = mc_get_appointments($pdo);
     $boot['payments']     = mc_get_payments($pdo);
     $boot['queue']        = mc_get_queue($pdo);

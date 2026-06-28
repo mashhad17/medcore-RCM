@@ -52,6 +52,12 @@
         .btn-card-action:hover { background: var(--bg-aesthetic); }
         .btn-card-checkout { border-color: var(--success-text); color: var(--success-text); }
         .btn-card-checkout:hover { background: var(--success-bg); }
+
+        /* Completed lane + paid badge */
+        .queue-card.completed-card { opacity: 0.92; background: var(--bg-board); }
+        .paid-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; font-size:0.6875rem; font-weight:700; background: var(--success-bg); color: var(--success-text); }
+        .col-empty { text-align: center; color: var(--text-muted); font-size: 0.8125rem; margin-top: 1.5rem; padding: 1rem; border: 1px dashed var(--border-light); border-radius: 8px; }
+        .stage-pill { font-size:0.625rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; padding:3px 8px; border-radius:6px; background: var(--info-bg); color: var(--info-text); }
     </style>
     <script src="assets/js/theme.js"></script>
     <?php require_once __DIR__ . '/bootstrap.php'; ?>
@@ -115,6 +121,13 @@
                     </div>
                 </div>
                 <div class="header-actions">
+                    <span class="viewing-badge"></span>
+                    <div class="date-nav">
+                        <button class="date-nav-btn" id="viewDatePrev" title="Previous day">&lsaquo;</button>
+                        <input type="date" class="date-nav-input" id="viewDate" />
+                        <button class="date-nav-btn" id="viewDateNext" title="Next day">&rsaquo;</button>
+                        <button class="date-nav-today" id="viewDateToday">Today</button>
+                    </div>
                     <div style="font-size:0.875rem; font-weight:500; color:var(--text-mid); padding-right:1.5rem; border-right:1px solid var(--border-light);">
                         <span id="header-time">--:-- --</span> <span id="header-date" style="color:var(--text-muted); font-weight:400; margin-left:6px;"></span>
                     </div>
@@ -141,62 +154,16 @@
                 </div>
 
                 <div class="kanban-board">
-                    
+
                     <div class="kanban-col" id="col-waiting">
                         <div class="col-header">
                             <div style="display:flex; align-items:center; gap:8px;">
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
                                 Waiting Room
                             </div>
-                            <span class="col-count" id="count-waiting">2</span>
+                            <span class="col-count" id="count-waiting">0</span>
                         </div>
-                        <div class="col-body">
-                            <div class="queue-card" id="card-1" data-physician="Dr. Roger">
-                                <div class="card-top">
-                                    <div class="pt-name-wrap">
-                                        <div class="pt-avatar-sm avatar-orange">ZA</div>
-                                        <div>
-                                            <span class="pt-name-text">Zain Ahmed</span>
-                                            <span class="pt-mrn">MRN-2026-0007</span>
-                                        </div>
-                                    </div>
-                                    <div class="timer-badge timer-warning" data-minutes="22">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                                        <span class="time-text">22 m</span>
-                                    </div>
-                                </div>
-                                <div class="card-middle">
-                                    <div class="detail-row"><span class="detail-label">Assigned:</span> <span class="detail-value doc-text">Dr. Roger</span></div>
-                                    <div class="detail-row"><span class="detail-label">Reason:</span> <span class="detail-value">Skin Rash</span></div>
-                                </div>
-                                <button class="btn-card-action" onclick="moveCard('card-1', 'col-consultation')">
-                                    Send to Consultation &rarr;
-                                </button>
-                            </div>
-
-                            <div class="queue-card" id="card-2" data-physician="Dr. Fatima">
-                                <div class="card-top">
-                                    <div class="pt-name-wrap">
-                                        <div class="pt-avatar-sm avatar-blue">SK</div>
-                                        <div>
-                                            <span class="pt-name-text">Sara Khan</span>
-                                            <span class="pt-mrn">MRN-2026-0006</span>
-                                        </div>
-                                    </div>
-                                    <div class="timer-badge timer-safe" data-minutes="5">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                                        <span class="time-text">5 m</span>
-                                    </div>
-                                </div>
-                                <div class="card-middle">
-                                    <div class="detail-row"><span class="detail-label">Assigned:</span> <span class="detail-value doc-text">Dr. Fatima</span></div>
-                                    <div class="detail-row"><span class="detail-label">Reason:</span> <span class="detail-value">Root Canal</span></div>
-                                </div>
-                                <button class="btn-card-action" onclick="moveCard('card-2', 'col-consultation')">
-                                    Send to Consultation &rarr;
-                                </button>
-                            </div>
-                        </div>
+                        <div class="col-body" id="body-waiting"></div>
                     </div>
 
                     <div class="kanban-col" id="col-consultation">
@@ -205,32 +172,9 @@
                                 <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
                                 In Consultation
                             </div>
-                            <span class="col-count" id="count-consultation">1</span>
+                            <span class="col-count" id="count-consultation">0</span>
                         </div>
-                        <div class="col-body">
-                            <div class="queue-card" id="card-3" data-physician="Dr. Ali">
-                                <div class="card-top">
-                                    <div class="pt-name-wrap">
-                                        <div class="pt-avatar-sm avatar-green">AS</div>
-                                        <div>
-                                            <span class="pt-name-text">Ameem Siddiqui</span>
-                                            <span class="pt-mrn">MRN-2026-0008</span>
-                                        </div>
-                                    </div>
-                                    <div class="timer-badge timer-safe" data-minutes="14">
-                                        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-                                        <span class="time-text">14 m</span>
-                                    </div>
-                                </div>
-                                <div class="card-middle">
-                                    <div class="detail-row"><span class="detail-label">Location:</span> <span class="detail-value">Room 03</span></div>
-                                    <div class="detail-row"><span class="detail-label">Doctor:</span> <span class="detail-value doc-text">Dr. Ali</span></div>
-                                </div>
-                                <button class="btn-card-action" onclick="moveCard('card-3', 'col-billing')">
-                                    Send to Billing &rarr;
-                                </button>
-                            </div>
-                        </div>
+                        <div class="col-body" id="body-consultation"></div>
                     </div>
 
                     <div class="kanban-col" id="col-billing">
@@ -241,11 +185,18 @@
                             </div>
                             <span class="col-count" id="count-billing">0</span>
                         </div>
-                        <div class="col-body">
-                            <div id="empty-billing" style="text-align: center; color: var(--text-muted); font-size: 0.8125rem; margin-top: 2rem; padding: 1rem; border: 1px dashed var(--border-light); border-radius: 8px;">
-                                No patients in checkout.
+                        <div class="col-body" id="body-billing"></div>
+                    </div>
+
+                    <div class="kanban-col" id="col-completed">
+                        <div class="col-header" style="border-bottom-color: var(--text-muted);">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                Completed
                             </div>
+                            <span class="col-count" id="count-completed">0</span>
                         </div>
+                        <div class="col-body" id="body-completed"></div>
                     </div>
 
                 </div>
@@ -253,6 +204,7 @@
         </div>
     </div>
 
+    <script src="assets/js/datebar.js"></script>
     <script src="assets/js/queue.js"></script>
 </body>
 </html>

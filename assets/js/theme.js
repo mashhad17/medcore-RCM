@@ -64,3 +64,32 @@ document.addEventListener('DOMContentLoaded', function () {
     updateUAEClock();
     setInterval(updateUAEClock, 1000);
 });
+
+// 6. Sign out — ends the staff session and returns to the login screen.
+function medcoreSignOut() {
+    if (!confirm('Sign out of MedCore?')) return;
+    try {
+        localStorage.removeItem('medcore_remember_device');
+        sessionStorage.clear();
+    } catch (e) { /* storage unavailable */ }
+    window.location.href = 'index.php';
+}
+
+// Inject a Sign out button into every page's sidebar footer (next to the theme
+// toggle) so it's consistent everywhere without editing each page.
+document.addEventListener('DOMContentLoaded', function () {
+    var footer = document.querySelector('.sidebar-footer');
+    if (!footer || document.getElementById('signOutBtn')) return;
+    var btn = document.createElement('button');
+    btn.id = 'signOutBtn';
+    btn.className = 'fade-text';
+    btn.title = 'Sign out';
+    btn.setAttribute('onclick', 'medcoreSignOut()');
+    btn.style.cssText = 'background:transparent;border:none;cursor:pointer;color:var(--text-muted);display:flex;align-items:center;justify-content:center;padding:4px;border-radius:8px;margin-left:6px;transition:color 0.2s;';
+    btn.onmouseenter = function () { btn.style.color = 'var(--danger)'; };
+    btn.onmouseleave = function () { btn.style.color = 'var(--text-muted)'; };
+    btn.innerHTML = '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path><polyline points="16 17 21 12 16 7"></polyline><line x1="21" y1="12" x2="9" y2="12"></line></svg>';
+    var themeBtn = document.getElementById('themeToggleBtn');
+    if (themeBtn && themeBtn.parentNode) themeBtn.parentNode.insertBefore(btn, themeBtn.nextSibling);
+    else footer.appendChild(btn);
+});

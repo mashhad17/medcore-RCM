@@ -54,25 +54,42 @@
         }
 
         .metric-card {
+            position: relative;
+            overflow: hidden;
             background: var(--bg-surface);
             border: 1px solid var(--border-light);
-            border-radius: 10px;
-            padding: 1.25rem;
+            border-radius: 14px;
+            padding: 1.3rem 1.4rem;
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+            box-shadow: 0 2px 10px rgba(15, 23, 42, 0.04);
             transition: background-color 0.2s ease, transform 0.15s ease, box-shadow 0.2s ease, border-color 0.2s ease;
         }
+
+        /* Color-coded accent bar per metric */
+        .metric-card::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 3px;
+            background: var(--metric-accent, var(--accent));
+            opacity: 0.9;
+        }
+        .metrics-grid .metric-card:nth-child(1) { --metric-accent: var(--info-text); }
+        .metrics-grid .metric-card:nth-child(2) { --metric-accent: var(--success-text); }
+        .metrics-grid .metric-card:nth-child(3) { --metric-accent: var(--warning-text); }
+        .metrics-grid .metric-card:nth-child(4) { --metric-accent: var(--danger); }
+        .metrics-grid .metric-card:nth-child(5) { --metric-accent: var(--accent); }
 
         .metric-clickable {
             cursor: pointer;
         }
 
         .metric-clickable:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 6px 16px rgba(0, 0, 0, 0.08);
-            border-color: var(--accent);
+            transform: translateY(-3px);
+            box-shadow: 0 12px 24px rgba(15, 23, 42, 0.1);
+            border-color: var(--metric-accent, var(--accent));
         }
 
         .metric-clickable:focus-visible {
@@ -201,19 +218,21 @@
         }
 
         .metric-value {
-            font-size: 1.75rem;
+            font-size: 2rem;
             font-weight: 600;
             color: var(--text-dark);
             font-family: 'Lora', serif;
+            line-height: 1.1;
         }
 
         .metric-icon {
-            width: 40px;
-            height: 40px;
-            border-radius: 8px;
+            width: 46px;
+            height: 46px;
+            border-radius: 13px;
             display: flex;
             align-items: center;
             justify-content: center;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.04);
         }
 
         .hub-grid {
@@ -226,8 +245,8 @@
         .base-card {
             background: var(--bg-surface);
             border: 1px solid var(--border-light);
-            border-radius: 12px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.03);
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(15, 23, 42, 0.04);
             overflow: hidden;
             transition: background-color 0.2s ease;
         }
@@ -427,11 +446,11 @@
             line-height: 1.5;
         }
         .provider-panel {
-            background: #FFFFFF;
-            border-radius: 12px;
-            box-shadow: 0 2px 12px rgba(0,0,0,0.07);
+            background: var(--bg-surface);
+            border-radius: 14px;
+            box-shadow: 0 2px 12px rgba(15, 23, 42, 0.04);
             padding: 20px;
-            border: 1px solid #E5E7EB;
+            border: 1px solid var(--border-light);
         }
 
         .provider-panel-header {
@@ -443,7 +462,7 @@
 
         .provider-panel-title {
             font-weight: 600;
-            color: #111827;
+            color: var(--text-dark);
             font-size: 1.0625rem;
             display: flex;
             align-items: center;
@@ -452,7 +471,7 @@
 
         .provider-panel-summary {
             font-size: 12px;
-            color: #6B7280;
+            color: var(--text-muted);
             display: flex;
             align-items: center;
             gap: 6px;
@@ -468,9 +487,9 @@
             display: flex;
             align-items: center;
             padding: 10px 12px;
-            border-radius: 8px;
-            border-bottom: 1px solid #F3F4F6;
-            transition: background 0.2s ease;
+            border-radius: 10px;
+            border-bottom: 1px solid var(--border-light);
+            transition: background 0.2s ease, transform 0.15s ease;
             cursor: pointer;
         }
 
@@ -479,22 +498,24 @@
         }
 
         .provider-row:hover {
-            background: #F9FAFB;
+            background: var(--bg-aesthetic);
+            transform: translateX(2px);
         }
 
         .provider-row-avatar {
-            width: 36px;
-            height: 36px;
+            width: 38px;
+            height: 38px;
             border-radius: 50%;
-            background-color: #F3F4F6;
-            color: #374151;
+            background: linear-gradient(135deg, var(--accent), var(--accent-hover));
+            color: #fff;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 600;
-            font-size: 14px;
+            font-weight: 700;
+            font-size: 13px;
             flex-shrink: 0;
             margin-right: 12px;
+            box-shadow: 0 3px 8px rgba(15, 23, 42, 0.14);
         }
 
         .provider-row-info {
@@ -507,7 +528,7 @@
         .provider-row-name {
             font-weight: 600;
             font-size: 14px;
-            color: #111827;
+            color: var(--text-dark);
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -515,7 +536,7 @@
 
         .provider-row-spec {
             font-size: 12px;
-            color: #6B7280;
+            color: var(--text-muted);
             margin-top: 2px;
         }
 
@@ -524,12 +545,12 @@
             align-items: center;
             gap: 6px;
             font-size: 12px;
-            color: #10B981;
-            font-weight: 500;
+            color: var(--success-text);
+            font-weight: 600;
         }
 
         .provider-row-status.status-neutral {
-            color: #6B7280;
+            color: var(--text-muted);
         }
 
         @keyframes pulse-ring {
@@ -778,6 +799,13 @@
                 </div>
 
                 <div class="header-actions">
+                    <span class="viewing-badge"></span>
+                    <div class="date-nav">
+                        <button class="date-nav-btn" id="viewDatePrev" title="Previous day">&lsaquo;</button>
+                        <input type="date" class="date-nav-input" id="viewDate" />
+                        <button class="date-nav-btn" id="viewDateNext" title="Next day">&rsaquo;</button>
+                        <button class="date-nav-today" id="viewDateToday">Today</button>
+                    </div>
                     <div
                         style="font-size:0.875rem; font-weight:500; color:var(--text-mid); padding-right:1.5rem; border-right:1px solid var(--border-light);">
                         <span id="header-time">--:-- --</span> <span id="header-date"
@@ -903,7 +931,7 @@
                                         <circle cx="12" cy="12" r="10"></circle>
                                         <polyline points="12 6 12 12 16 14"></polyline>
                                     </svg>
-                                    Next Up (Waiting Room)
+                                    <span id="nextUpTitle">Next Up (Waiting Room)</span>
                                 </div>
                             </div>
                             <div class="activity-body">
@@ -933,7 +961,7 @@
                     <div style="display: flex; flex-direction: column; gap: 1.5rem;">
                         
                         <!-- Fast-Track Walk-In Widget -->
-                        <div class="provider-panel">
+                        <div class="provider-panel" id="walkInPanel">
                             <div class="provider-panel-header">
                                 <div class="provider-panel-title">
                                     <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="color: var(--accent);">
@@ -1007,6 +1035,7 @@
         </div>
     </div>
 
+    <script src="assets/js/datebar.js"></script>
     <script src="assets/js/dashboard.js"></script>
 
 </body>

@@ -3,7 +3,7 @@
    ───────────────────────────────────────────────── */
 
 const GRID_START_HOUR = 8;
-const GRID_END_HOUR = 17;
+const GRID_END_HOUR = 23; // clinic day runs 8 AM → 11 PM
 const PIXELS_PER_HOUR = 120;
 
 let displayMonthDate = new Date();
@@ -62,6 +62,10 @@ function selectDate(year, month, day) {
     selectedDate = new Date(year, month, day);
     displayMonthDate = new Date(year, month, 1);
     renderCalendar();
+
+    // Keep the header date-nav input in sync with calendar clicks.
+    const vi = document.getElementById('viewDate');
+    if (vi) vi.value = formatDateKey(selectedDate);
 
     document.getElementById('header-date-text').textContent = `${shortMonths[month]} ${day}, ${year}`;
     const formattedDate = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
@@ -254,16 +258,23 @@ function getAppointmentsForDate(dateString) {
 }
 
 /* ── 4. TIMELINE RENDERING ── */
+const DOCTOR_COLUMN_ACCENTS = ['#4F7CAC', '#0EA5E9', '#8B5CF6', '#EC4899', '#F59E0B'];
+
 function renderGridHeaders() {
     if (typeof window.getRealTimeProviderStatus === 'function') {
         const providers = window.getRealTimeProviderStatus();
         providers.forEach((p, index) => {
             const headerCol = document.getElementById(`doc-header-${index}`);
             if (headerCol) {
+                const accent = DOCTOR_COLUMN_ACCENTS[index % DOCTOR_COLUMN_ACCENTS.length];
+                const shortName = p.name.split(' (')[0];
+                const initials = shortName.replace(/^dr\.?\s*/i, '').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+                headerCol.style.setProperty('--col-accent', accent);
                 headerCol.innerHTML = `
-                    <div class="doctor-name">${p.name.split(' (')[0]}</div>
+                    <div class="doc-avatar">${initials || 'DR'}</div>
+                    <div class="doctor-name">${shortName}</div>
                     <div class="doctor-spec">${p.dept}</div>
-                    <div style="display:flex; align-items:center; justify-content:center; gap:4px; font-size:0.6875rem; color:var(--text-muted); margin-top:6px; font-weight: 500;">
+                    <div class="doc-status-pill">
                         <span class="status-dot ${p.dotClass}"></span> ${p.status}
                     </div>
                 `;
@@ -393,17 +404,69 @@ function setConfirmStatus(appId, key) {
     if (document.getElementById('quickViewModal').classList.contains('open')) openQuickView(appId);
 }
 
+/* Generate an MRN that is not already used by any patient on record, so two
+   different patients can never share one (which previously cross-matched the
+   queue / consultation state by MRN). */
+function generateUniqueMrn() {
+    const year = new Date().getFullYear();
+    const existing = new Set((appointments || []).map(a => a.mrn).filter(Boolean));
+    for (let i = 0; i < 50; i++) {
+        const mrn = 'MRN-' + year + '-' + String(Math.floor(1000 + Math.random() * 9000));
+        if (!existing.has(mrn)) return mrn;
+    }
+    // Extremely unlikely fallback — guarantee uniqueness with a timestamp tail.
+    return 'MRN-' + year + '-' + Date.now().toString().slice(-6);
+}
+
 /* ── LIVE QUEUE HELPER ── */
+/* Find a patient's live-queue entry. Prefer the appointment id (always unique)
+   so a duplicate/clashing MRN can never cross-match a different patient; fall
+   back to MRN only for older entries that predate id tracking. */
+function findQueueItem(app) {
+    const queue = JSON.parse(localStorage.getItem('medcore_live_queue')) || [];
+    return queue.find(q => (q.id && app.id) ? q.id === app.id : (!!q.mrn && q.mrn === app.mrn)) || null;
+}
+
+function isInQueue(app) {
+    return !!findQueueItem(app);
+}
+
 function addToLiveQueue(app) {
     let queue = JSON.parse(localStorage.getItem('medcore_live_queue')) || [];
-    if (queue.some(q => q.mrn === app.mrn)) return;
+    if (findQueueItem(app)) return;
     queue.push({
+        id: app.id,
         mrn: app.mrn,
         patientName: app.patientName,
         doctor: app.doctorName,
         reason: app.reason,
-        checkedInAt: new Date().toISOString()
+        checkedInAt: new Date().toISOString(),
+        stage: 'waiting'   // Waiting Room → Consultation → Billing → Completed
     });
+    localStorage.setItem('medcore_live_queue', JSON.stringify(queue));
+}
+
+/* Returns the patient (queue item) a doctor is currently consulting, if any —
+   i.e. a live-queue item at stage 'consultation' for that doctor, other than
+   the patient we're checking for. Used to enforce one-patient-at-a-time. */
+function getDoctorConsultationPatient(doctorName, exceptMrn, exceptId) {
+    if (!doctorName) return null;
+    const docShort = doctorName.split(' (')[0].trim();
+    const queue = JSON.parse(localStorage.getItem('medcore_live_queue')) || [];
+    return queue.find(q => q.stage === 'consultation'
+        && !(exceptId && q.id && q.id === exceptId)
+        && q.mrn !== exceptMrn
+        && (q.doctor || '').split(' (')[0].trim() === docShort) || null;
+}
+
+/* Move a live-queue patient into a different stage (used when reception sends
+   the consultation to the doctor → the patient appears In Consultation). */
+function setLiveQueueStage(mrn, stage) {
+    let queue = JSON.parse(localStorage.getItem('medcore_live_queue')) || [];
+    const item = queue.find(q => q.mrn === mrn);
+    if (!item) return;
+    item.stage = stage;
+    if (stage === 'consultation' && !item.consultStartedAt) item.consultStartedAt = new Date().toISOString();
     localStorage.setItem('medcore_live_queue', JSON.stringify(queue));
 }
 
@@ -453,46 +516,104 @@ function openQuickView(appId) {
     const confirmVal = app.confirmStatus || 'pending';
     const visitVal = (app.status === 'past') ? 'completed' : app.status;
 
+    // ── Consultation workflow state ──
+    // Step 1: patient must be added to the live queue.
+    // Step 2: only then can the consultation be sent to the doctor portal.
+    // Step 3: doctor picks it up and starts the consultation.
+    // Read the patient's live-queue item so the modal reflects the SAME state
+    // the Live Clinic Queue shows — whether they were sent from here or moved
+    // into Consultation on the queue board.
+    const queueItem     = findQueueItem(app);
+    const queueStage    = queueItem ? (queueItem.stage || 'waiting') : null;
+    const inQueue       = !!queueItem;
+    const inConsultation = queueStage === 'consultation' || queueStage === 'billing';
+    const sentToDoctor  = !!app.sentToDoctor || inConsultation;
+    const docFull       = app.doctorName || 'Unassigned';
+    const docName       = docFull.split(' (')[0];
+    const docDept       = (docFull.match(/\((.*?)\)/) || [, 'General'])[1];
+    const initials      = (app.patientName || '?').trim().split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+
+    // Consultation is finished once the visit is completed AND payment collected
+    // (the queue's "Mark as Paid" sets status=completed + invoice.paid).
+    const consultationDone = (app.status === 'completed' || app.status === 'past') || !!(app.invoice && app.invoice.paid);
+
+    // Once the patient has moved past the queue, the "Add to Queue" step stays done.
+    const queuedDone = inQueue || sentToDoctor || consultationDone;
+
+    // Is this doctor already busy with another patient (one consult at a time)?
+    const busyWith      = (sentToDoctor || consultationDone) ? null : getDoctorConsultationPatient(app.doctorName, app.mrn, app.id);
+    const doctorBusy    = !!busyWith;
+
+    const flowStep = consultationDone ? 4 : (sentToDoctor ? 3 : (inQueue ? 2 : 1));
+
     document.getElementById('quick-view-body').innerHTML = `
-        <div style="display: flex; justify-content: space-between; gap: 16px;">
-            <div style="display: flex; gap: 14px;">
-                <div style="width: 56px; height: 56px; border-radius: 50%; background: var(--bg-aesthetic); display: flex; align-items: center; justify-content: center; flex-shrink: 0; color: var(--text-muted);">
-                    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-                </div>
-                <div>
-                    <div style="font-weight: 700; color: var(--text-dark); font-size: 0.9375rem; margin-bottom: 4px;">${app.mrn} / ${app.patientName}</div>
-                    <div class="qv-row"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"></path></svg>${app.phone || 'N/A'}</div>
-                    <div class="qv-row"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>${app.dob ? new Date(app.dob).toLocaleDateString('en-GB') : 'DOB unknown'}${age ? ` · ${age}` : ''} (${app.resident === 'no' ? 'Non-Resident' : 'M'})</div>
+        <div class="qv-head">
+            <div class="qv-avatar">${initials || '–'}</div>
+            <div class="qv-head-main">
+                <div class="qv-name">${app.patientName}</div>
+                <div class="qv-mrn">${app.mrn}</div>
+                <div class="qv-chips">
+                    <span class="qv-chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"></path></svg>${app.phone || 'N/A'}</span>
+                    <span class="qv-chip"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>${app.dob ? new Date(app.dob).toLocaleDateString('en-GB') : 'DOB unknown'}${age ? ` · ${age}` : ''}</span>
+                    <span class="qv-chip">${app.resident === 'no' ? 'Non-Resident' : 'Resident'}</span>
                 </div>
             </div>
-            <div style="text-align: right;">
-                <div style="display: flex; align-items: center; gap: 6px; justify-content: flex-end; color: var(--text-mid); font-size: 0.8125rem; font-weight: 600;">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>${visitType}
-                </div>
-                <div style="color: var(--text-muted); font-size: 0.8125rem; margin-top: 4px;">${formatApptTimeRange(app)}</div>
+            <div class="qv-head-side">
+                <span class="qv-badge ${visitType === 'New Patient' ? 'qv-badge-new' : 'qv-badge-revisit'}">${visitType}</span>
+                <div class="qv-time"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>${formatApptTimeRange(app)}</div>
+                <div class="qv-doc">${docName} · ${docDept}</div>
             </div>
         </div>
 
-        <div class="qv-section" style="margin-top: 12px;">
-            <div class="qv-row" style="margin-bottom: 8px;"><span class="qv-label">ID:</span> ${idText}</div>
-            <div class="qv-row" style="margin-bottom: 8px;"><span class="qv-label">Insurance:</span> ${pkg ? `${pkg.name} (exp ${pkg.expiryDate})` : 'Cash / No active policy'}</div>
-            <div class="qv-row" style="margin-bottom: 8px;"><span class="qv-label">Overdue Amount:</span> <span style="color: var(--danger); font-weight: 600;">${(app.overdue != null ? app.overdue : 0).toLocaleString()}</span></div>
-            <div class="qv-row" style="align-items: flex-start;"><span class="qv-label">Items:</span> <span style="color: var(--text-mid);">${itemsText}</span></div>
+        <div class="qv-flow">
+            <div class="qv-step ${flowStep >= 1 ? (flowStep > 1 ? 'done' : 'active') : ''}">
+                <span class="qv-step-dot">${flowStep > 1 ? '✓' : '1'}</span>
+                <span class="qv-step-label">Add to Queue</span>
+            </div>
+            <div class="qv-step-bar ${flowStep > 1 ? 'fill' : ''}"></div>
+            <div class="qv-step ${flowStep >= 2 ? (flowStep > 2 ? 'done' : 'active') : ''}">
+                <span class="qv-step-dot">${flowStep > 2 ? '✓' : '2'}</span>
+                <span class="qv-step-label">Send to Doctor</span>
+            </div>
+            <div class="qv-step-bar ${flowStep > 2 ? 'fill' : ''}"></div>
+            <div class="qv-step ${flowStep >= 3 ? (flowStep > 3 ? 'done' : 'active') : ''}">
+                <span class="qv-step-dot">${flowStep > 3 ? '✓' : '3'}</span>
+                <span class="qv-step-label">Consultation</span>
+            </div>
         </div>
 
-        <div class="qv-section" style="display: flex; justify-content: space-between; font-size: 0.75rem; color: var(--text-muted);">
-            <div><span class="qv-label">Created By:</span> Admin &nbsp; <span class="qv-label">Date:</span> ${app.createdDate || '—'}</div>
-            <div><span class="qv-label">Modified By:</span> Admin &nbsp; <span class="qv-label">Date:</span> ${app.modifiedDate || '—'}</div>
+        <div class="qv-info-grid">
+            <div class="qv-info"><span class="qv-info-key">ID</span><span class="qv-info-val">${idText}</span></div>
+            <div class="qv-info"><span class="qv-info-key">Insurance</span><span class="qv-info-val">${pkg ? `${pkg.name} (exp ${pkg.expiryDate})` : 'Cash / No active policy'}</span></div>
+            <div class="qv-info"><span class="qv-info-key">Overdue</span><span class="qv-info-val" style="color: var(--danger); font-weight: 700;">${(app.overdue != null ? app.overdue : 0).toLocaleString()}</span></div>
+            <div class="qv-info"><span class="qv-info-key">Items</span><span class="qv-info-val">${itemsText}</span></div>
         </div>
+
+        <div class="qv-primary">
+            <button class="qv-btn qv-btn-primary ${queuedDone ? 'is-done' : ''}" ${queuedDone ? 'disabled' : ''} onclick="quickAddToQueue('${app.id}')">
+                ${queuedDone
+                    ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> In Queue'
+                    : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"></line><line x1="5" y1="12" x2="19" y2="12"></line></svg> Add to Queue'}
+            </button>
+            <button class="qv-btn qv-btn-doctor ${sentToDoctor ? 'is-done' : ''}" ${(!inQueue || sentToDoctor || doctorBusy) ? 'disabled' : ''} onclick="sendToDoctor('${app.id}')" title="${sentToDoctor ? 'Already with the doctor' : (doctorBusy ? docName + ' is busy with another patient' : (inQueue ? 'Send this consultation to ' + docName : 'Add the patient to the queue first'))}">
+                ${sentToDoctor
+                    ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Sent to Doctor'
+                    : (doctorBusy
+                        ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><line x1="4.93" y1="4.93" x2="19.07" y2="19.07"></line></svg> Doctor Busy'
+                        : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="22" y1="2" x2="11" y2="13"></line><polygon points="22 2 15 22 11 13 2 9 22 2"></polygon></svg> Send to Doctor')}
+            </button>
+        </div>
+        ${consultationDone
+            ? `<div class="qv-sent-note"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polyline points="20 6 9 17 4 12"></polyline></svg> Consultation complete — payment collected &amp; patient checked out.</div>`
+            : (sentToDoctor ? `<div class="qv-sent-note"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg> ${queueStage === 'billing' ? `Consultation complete — <strong>${docName}</strong> sent this patient to billing.` : (inConsultation ? `With <strong>${docName}</strong> — consultation in progress.` : `On <strong>${docName}</strong>'s portal — awaiting consultation.`)}</div>` : '')}
+        ${doctorBusy ? `<div class="qv-busy-note"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg> <strong>${docName}</strong> is in consultation with <strong>${busyWith.patientName}</strong>. You can send this patient once that consultation moves to billing.</div>` : ''}
 
         <div class="qv-actions">
-            <button class="qv-link" onclick="quickAddToQueue('${app.id}')">Add to Queue</button>
-            <button class="qv-link" onclick="openInvoice('${app.id}')">Make Invoice</button>
-            <button class="qv-link" onclick="quickChangeDoctor('${app.id}')">Change Doctor</button>
-            <button class="qv-link" onclick="quickAction('EAuth Request', '${app.id}')">EAuth Request</button>
-            <button class="qv-link" onclick="quickAction('Sick Leave', '${app.id}')">Sick Leave</button>
-            <button class="qv-link" onclick="openConsentList('${app.id}')">Request Consent</button>
-            <button class="qv-link" onclick="quickPrintInvoice('${app.id}')">Print Invoice</button>
+            <button class="qv-link" onclick="openInvoice('${app.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>Make Invoice</button>
+            <button class="qv-link" onclick="quickChangeDoctor('${app.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>Change Doctor</button>
+            <button class="qv-link" onclick="quickAction('Print Sick Leave', '${app.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>Print Sick Leave</button>
+            <button class="qv-link" onclick="openConsentList('${app.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 11l3 3L22 4"></path><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"></path></svg>Request Consent</button>
+            <button class="qv-link" onclick="quickPrintInvoice('${app.id}')"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="6 9 6 2 18 2 18 9"></polyline><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"></path><rect x="6" y="14" width="12" height="8"></rect></svg>Print Invoice</button>
         </div>
 
         <div class="qv-selects">
@@ -515,6 +636,11 @@ function openQuickView(appId) {
                     <option value="cancelled" ${visitVal === 'cancelled' ? 'selected' : ''}>Cancelled</option>
                 </select>
             </div>
+        </div>
+
+        <div class="qv-foot">
+            <span><span class="qv-label">Created:</span> Admin · ${app.createdDate || '—'}</span>
+            <span><span class="qv-label">Modified:</span> Admin · ${app.modifiedDate || '—'}</span>
         </div>
     `;
 
@@ -559,8 +685,82 @@ function quickAddToQueue(appId) {
     localStorage.setItem('medcore_appointments', JSON.stringify(appointments));
     logActivity(`${app.patientName} added to live queue`, 'by Reception');
     renderAppointmentsForDate(formatDateKey(selectedDate));
-    alert(`${app.patientName} added to the Waiting Room. Open Live Clinic Queue to view.`);
+    alert(`${app.patientName} added to the Waiting Room. You can now Send to Doctor.`);
     openQuickView(appId);
+}
+
+/* ── SEND CONSULTATION TO THE DOCTOR PORTAL ──
+   Bridges the reception appointment into the doctor portal DB via
+   send_to_doctor.php, so the specific doctor sees it on their dashboard
+   and can start the consultation. Gated behind the live queue (Step 1). */
+async function sendToDoctor(appId) {
+    const app = appointments.find(a => a.id === appId);
+    if (!app) return;
+
+    if (!isInQueue(app)) {
+        alert('Add the patient to the queue first, then send to the doctor.');
+        return;
+    }
+    if (!app.doctorName) {
+        alert('No doctor is assigned. Use "Change Doctor" to assign one before sending.');
+        return;
+    }
+    if (app.sentToDoctor) {
+        alert(`${app.patientName} has already been sent to ${app.doctorName.split(' (')[0]}.`);
+        return;
+    }
+
+    // A doctor can only see one patient at a time. Block if that doctor already
+    // has another patient in the Consultation lane (status: In Consultation).
+    const busyWith = getDoctorConsultationPatient(app.doctorName, app.mrn, app.id);
+    if (busyWith) {
+        alert(`${app.doctorName.split(' (')[0]} is currently in consultation with ${busyWith.patientName}.\n\nPlease wait until that consultation is sent to billing before sending another patient.`);
+        return;
+    }
+
+    // Optimistic UI: lock the button while the request is in flight.
+    const btn = document.querySelector('.qv-btn-doctor');
+    if (btn) { btn.disabled = true; btn.innerHTML = 'Sending…'; }
+
+    const startStr = `${String(app.startHour).padStart(2, '0')}:${String(app.startMinute).padStart(2, '0')}`;
+    const payload = {
+        extRef:      app.id,
+        doctorName:  app.doctorName,
+        patientName: app.patientName,
+        mrn:         app.mrn,
+        dob:         app.dob || '',
+        gender:      app.gender || '',
+        phone:       app.phone || '',
+        nationalId:  app.nid || '',
+        reason:      app.reason || '',
+        date:        app.date || '',
+        time:        startStr,
+        duration:    app.duration || 30
+    };
+
+    try {
+        const res = await fetch('send_to_doctor.php', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        const data = await res.json();
+        if (!res.ok || !data.ok) throw new Error(data.error || 'Request failed');
+
+        app.sentToDoctor = true;
+        app.portalAppointmentId = data.appointment_id;
+        localStorage.setItem('medcore_appointments', JSON.stringify(appointments));
+        // The patient is now with the doctor → advance them to the In-Consultation
+        // lane of the Live Clinic Queue automatically.
+        setLiveQueueStage(app.mrn, 'consultation');
+        logActivity(`${app.patientName} sent to ${app.doctorName.split(' (')[0]} for consultation`, 'by Reception');
+        renderAppointmentsForDate(formatDateKey(selectedDate));
+        alert(data.message || `Consultation sent to ${app.doctorName.split(' (')[0]}. It now appears on the doctor's portal.`);
+    } catch (err) {
+        alert('Could not send to the doctor portal.\n\n' + err.message);
+    } finally {
+        openQuickView(appId);
+    }
 }
 
 function quickChangeDoctor(appId) {
@@ -581,6 +781,48 @@ function quickAction(label, appId) {
     const app = appointments.find(a => a.id === appId);
     logActivity(`${label} initiated for ${app ? app.patientName : 'patient'}`, 'by Reception');
     alert(`${label} — workflow coming soon for ${app ? app.patientName : 'this patient'}.`);
+}
+
+/* ───────────────────────────────────────────────
+   DOCTOR SIGNATURE REGISTRY
+   ------------------------------------------------
+   Every doctor has a signature kept on file. It is generated once per
+   doctor (a styled rendering of their name), cached in localStorage, and
+   pre-filled onto every consent form for that doctor — so the doctor's
+   signature is already there when the patient arrives to sign.
+   ─────────────────────────────────────────────── */
+function loadDoctorSignatures() {
+    try { return JSON.parse(localStorage.getItem('medcore_doctor_signatures')) || {}; }
+    catch (e) { return {}; }
+}
+
+function renderSignatureImage(name) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 360; canvas.height = 120;
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.fillStyle = '#1F3A5F';
+    ctx.textBaseline = 'middle';
+    // Handwriting-style fonts available on Windows, with cursive fallback.
+    ctx.font = 'italic 600 40px "Segoe Script", "Brush Script MT", "Lucida Handwriting", cursive';
+    ctx.fillText(name, 16, 50);
+    // Hand-drawn underline flourish
+    ctx.strokeStyle = '#1F3A5F'; ctx.lineWidth = 2.2; ctx.lineCap = 'round';
+    ctx.beginPath();
+    ctx.moveTo(14, 86);
+    ctx.bezierCurveTo(90, 98, 220, 72, 346, 88);
+    ctx.stroke();
+    return canvas.toDataURL('image/png');
+}
+
+function getDoctorSignature(doctorFull) {
+    const docName = doctorFull ? doctorFull.split(' (')[0] : 'Attending Physician';
+    const store = loadDoctorSignatures();
+    if (store[docName]) return store[docName];
+    const dataUrl = renderSignatureImage(docName);
+    store[docName] = dataUrl;
+    localStorage.setItem('medcore_doctor_signatures', JSON.stringify(store));
+    return dataUrl;
 }
 
 /* ───────────────────────────────────────────────
@@ -767,7 +1009,10 @@ function openConsentDoc(queue, index) {
     const rec = records[form.id] || { relation: 'Self', relationName: app.patientName, signedByPatient: false, accepted: false, signed: false, patientSig: null, doctorSig: null };
     const doctorName = app.doctorName ? app.doctorName.split(' (')[0] : 'Attending Physician';
     const isLast = index >= queue.length - 1;
-    consentSig = { patient: rec.patientSig || null, doctor: rec.doctorSig || null };
+    // The attending doctor's signature is kept on file and pre-filled here, so it
+    // is already present on the form before the patient signs.
+    const doctorSig = rec.doctorSig || getDoctorSignature(app.doctorName);
+    consentSig = { patient: rec.patientSig || null, doctor: doctorSig };
 
     document.getElementById('consent-body').innerHTML = `
         <div class="consent-toolbar" style="justify-content: space-between;">
@@ -817,8 +1062,8 @@ function openConsentDoc(queue, index) {
                             <strong>Department:</strong> ${(app.doctorName.match(/\((.*?)\)/) || [, 'General'])[1]}<br>
                             <strong>Date of Consultation:</strong> ${app.date}
                         </div>
-                        <div class="consent-sign-line" id="consent-doctor-sign">${rec.doctorSig ? `<img class="sig-img" src="${rec.doctorSig}">` : ''}</div>
-                        <div class="consent-sign-label">Doctor Seal / Signature</div>
+                        <div class="consent-sign-line" id="consent-doctor-sign">${doctorSig ? `<img class="sig-img" src="${doctorSig}">` : ''}</div>
+                        <div class="consent-sign-label">Doctor Seal / Signature <span style="color: var(--success-text); font-weight: 600;">✓ on file</span></div>
                     </div>
                 </div>
             </div>
@@ -945,11 +1190,15 @@ function closeSignatureModal() {
 }
 
 function resetConsentDoc() {
-    consentSig = { patient: null, doctor: null };
+    // Reset clears the patient signature only — the doctor's signature is on
+    // file, so it stays pre-filled on the form.
+    const app = appointments.find(a => a.id === consentState.appId);
+    const docSig = app ? getDoctorSignature(app.doctorName) : null;
+    consentSig = { patient: null, doctor: docSig };
     const pLine = document.getElementById('consent-patient-sign');
     const dLine = document.getElementById('consent-doctor-sign');
     if (pLine) pLine.innerHTML = '';
-    if (dLine) dLine.innerHTML = '';
+    if (dLine) dLine.innerHTML = docSig ? `<img class="sig-img" src="${docSig}">` : '';
     const accept = document.getElementById('consent-accept');
     if (accept) accept.checked = false;
     const sbp = document.getElementById('consent-signed-by-patient');
@@ -1048,11 +1297,30 @@ function recalcLine(line) {
     line.total = +(line.nett + line.vat).toFixed(2);
 }
 
+// Extended consultation time charged per 15-minute block beyond the booked slot.
+const EXTENDED_TIME_RATE = 50.00;
+
 function buildInvoiceLines(app) {
     const dept = (app.doctorName.match(/\((.*?)\)/) || [, 'General Practice'])[1];
     const lines = [];
+
+    // Show the effective consultation length; flag it when the doctor extended it.
+    const dur = app.duration || 0;
+    const booked = (app.bookedDuration != null) ? app.bookedDuration : dur;
+    const extended = dur > booked && booked > 0;
+    const consDesc = dur > 0
+        ? `Consultation - ${dept} (${dur} min${extended ? ', extended' : ''})`
+        : `Consultation - ${dept}`;
+
     const consCat = catalogFor(dept) || { code: 'CONS-GP-001', name: `Consultation - ${dept}`, price: 164.00 };
-    lines.push(makeInvLine(consCat.code, `Consultation - ${dept}`, 1, consCat.price));
+    lines.push(makeInvLine(consCat.code, consDesc, 1, consCat.price));
+
+    // Bill the extra time the consultation ran over the originally booked slot.
+    if (extended) {
+        const extraMin = dur - booked;
+        const blocks = Math.ceil(extraMin / 15);
+        lines.push(makeInvLine('EXT-TIME', `Extended consultation time (+${extraMin} min, was ${booked} min)`, blocks, EXTENDED_TIME_RATE));
+    }
 
     if (app.clinicalProfile && app.clinicalProfile.items && app.clinicalProfile.items.length) {
         app.clinicalProfile.items.forEach(it => {
@@ -2055,7 +2323,7 @@ function saveAppointmentForm() {
             (a.phone === phone && phone !== '')
         );
 
-        let targetMrn = existingPt ? existingPt.mrn : 'MRN-' + (new Date().getFullYear()) + '-' + String(Math.floor(1000 + Math.random() * 9000));
+        let targetMrn = existingPt ? existingPt.mrn : generateUniqueMrn();
 
         let sharedProfile = null;
         if (existingPt && existingPt.clinicalProfile) {
@@ -2135,14 +2403,16 @@ function switchTab(tabId, btnElement) {
 }
 
 window.onload = () => {
-    selectedDate = new Date();
-    displayMonthDate = new Date();
+    // Honour the shared view-date (?date=) so the scheduler opens on the
+    // selected day; default to today.
+    const vd = (typeof medcoreViewDate === 'function') ? medcoreViewDate() : null;
+    selectedDate = vd ? new Date(vd + 'T00:00:00') : new Date();
+    if (isNaN(selectedDate)) selectedDate = new Date();
+    displayMonthDate = new Date(selectedDate.getFullYear(), selectedDate.getMonth(), 1);
 
-    // Show UAE date in the header
-    var uaeDateStr = new Date().toLocaleDateString('en-US', {
-        timeZone: 'Asia/Dubai', month: 'short', day: 'numeric', year: 'numeric'
+    document.getElementById('header-date-text').textContent = selectedDate.toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric'
     });
-    document.getElementById('header-date-text').textContent = uaeDateStr;
 
     initAppointments();
     renderCalendar();

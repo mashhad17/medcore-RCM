@@ -120,6 +120,13 @@
                     </div>
                 </div>
                 <div class="header-actions">
+                    <span class="viewing-badge"></span>
+                    <div class="date-nav">
+                        <button class="date-nav-btn" id="viewDatePrev" title="Previous day">&lsaquo;</button>
+                        <input type="date" class="date-nav-input" id="viewDate" />
+                        <button class="date-nav-btn" id="viewDateNext" title="Next day">&rsaquo;</button>
+                        <button class="date-nav-today" id="viewDateToday">Today</button>
+                    </div>
                     <div
                         style="font-size:0.875rem; font-weight:500; color:var(--text-mid); padding-right:1rem; border-right:1px solid var(--border-light);">
                         <span id="header-time">--:-- --</span>
@@ -684,6 +691,7 @@
         <div class="panel-footer" id="panel-footer-actions"></div>
     </div>
 
+    <script src="assets/js/datebar.js"></script>
     <script src="assets/js/scheduler.js"></script>
 </body>
 

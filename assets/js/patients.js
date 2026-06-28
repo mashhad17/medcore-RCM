@@ -90,10 +90,10 @@ function renderDirectory() {
         const lastVisit = p.lastDate ? p.lastDate : '—';
 
         return `
-        <tr class="main-patient-row" data-physician="${shortDoc}" data-active="${p.active}" data-recent="${isRecent}" onclick="openProfile('${p.mrn}')">
+        <tr class="main-patient-row" data-mrn="${p.mrn}" data-physician="${shortDoc}" data-active="${p.active}" data-recent="${isRecent}" onclick="openFullRecord('${p.mrn}')">
             <td class="mrn-text">${p.mrn}</td>
             <td onclick="event.stopPropagation()">
-                <div class="pt-name-wrap" onclick="openProfile('${p.mrn}')" style="cursor:pointer;">
+                <div class="pt-name-wrap" onclick="openFullRecord('${p.mrn}')" style="cursor:pointer;">
                     <div class="pt-avatar-sm ${cls}">${pdInitials(p.name)}</div>
                     <div>
                         <div class="pt-name-text">${p.name || 'Unknown'}</div>
@@ -111,6 +111,7 @@ function renderDirectory() {
             <td>${chip}</td>
             <td onclick="event.stopPropagation()">
                 <div class="actions-cell">
+                    <button class="btn-outline" onclick="openFullRecord('${p.mrn}')" title="Open full record &amp; billing">Record</button>
                     <button class="btn-outline" onclick="bookVisit('${p.mrn}')">Book Visit</button>
                     <button class="btn-light-accent" onclick="toggleNotes('${p.mrn}')">Note${noteCount ? ' (' + noteCount + ')' : ''}</button>
                     <button class="icon-btn" onclick="openKebab(event,'${p.mrn}')" title="More">&#8942;</button>
@@ -195,7 +196,8 @@ function openKebab(event, mrn) {
     const p = PATIENTS.find(x => x.mrn === mrn);
     const menu = document.getElementById('kebabMenu');
     menu.innerHTML = `
-        <button class="kebab-item" onclick="openProfile('${mrn}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>View Full Profile</button>
+        <button class="kebab-item" onclick="openFullRecord('${mrn}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>View Full Record</button>
+        <button class="kebab-item" onclick="openProfile('${mrn}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>Quick Profile</button>
         <button class="kebab-item" onclick="bookVisit('${mrn}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>Book a Visit</button>
         <button class="kebab-item" onclick="closeKebab(); toggleNotes('${mrn}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>Add Clinical Note</button>
         <button class="kebab-item" onclick="copyPhone('${mrn}')"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72c.13.81.36 1.6.7 2.34a2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.74-1.27a2 2 0 0 1 2.11-.45c.74.34 1.53.57 2.34.7A2 2 0 0 1 22 16.92z"></path></svg>Copy Phone Number</button>`;
@@ -209,6 +211,12 @@ function openKebab(event, mrn) {
     menu.style.top = top + 'px';
 }
 function closeKebab() { document.getElementById('kebabMenu').style.display = 'none'; }
+
+function openFullRecord(mrn) {
+    closeKebab();
+    pdPushRecent(mrn);
+    window.location.href = 'patient.php?mrn=' + encodeURIComponent(mrn);
+}
 
 function copyPhone(mrn) {
     const p = PATIENTS.find(x => x.mrn === mrn);
@@ -278,10 +286,16 @@ function openProfile(mrn) {
             <span class="detail-label">Notes (${notes.length})</span>
             ${renderNoteCards(mrn)}
         </div>
-        <div style="padding:16px 24px; border-top:1px solid var(--border-light); display:flex; justify-content:flex-end; gap:10px;">
-            <button class="btn-ghost" onclick="closeProfile()">Close</button>
-            <button class="btn-secondary" onclick="closeProfile(); toggleNotes('${mrn}')">Add Note</button>
-            <button class="btn-primary" onclick="bookVisit('${mrn}')">Book Visit</button>
+        <div style="padding:16px 24px; border-top:1px solid var(--border-light); display:flex; justify-content:space-between; gap:10px;">
+            <button class="btn-secondary" onclick="openFullRecord('${mrn}')">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline></svg>
+                View Full Record &amp; Billing
+            </button>
+            <div style="display:flex; gap:10px;">
+                <button class="btn-ghost" onclick="closeProfile()">Close</button>
+                <button class="btn-secondary" onclick="closeProfile(); toggleNotes('${mrn}')">Add Note</button>
+                <button class="btn-primary" onclick="bookVisit('${mrn}')">Book Visit</button>
+            </div>
         </div>`;
 
     document.getElementById('profileModal').classList.add('open');
@@ -316,15 +330,24 @@ function applyFilters() {
     const rows = document.querySelectorAll('#patientTbody .main-patient-row');
     let visible = 0;
 
+    // When a past date is selected, show only patients seen that day.
+    const viewDate = (typeof medcoreViewDate === 'function') ? medcoreViewDate() : null;
+    const today = (typeof medcoreToday === 'function') ? medcoreToday() : null;
+    const dateFilterActive = viewDate && today && viewDate !== today;
+    const mrnsOnDate = dateFilterActive
+        ? new Set(pdGetAppointments().filter(a => a.date === viewDate && a.mrn).map(a => a.mrn))
+        : null;
+
     rows.forEach(row => {
         const noteRow = row.nextElementSibling;
         const textMatch = row.textContent.toLowerCase().includes(search);
         const physMatch = (phys === 'all') || (row.getAttribute('data-physician') === phys);
+        const dateMatch = !dateFilterActive || mrnsOnDate.has(row.getAttribute('data-mrn'));
         let tabMatch = true;
         if (currentTabFilter === 'recent') tabMatch = row.getAttribute('data-recent') === 'true';
         else if (currentTabFilter === 'active') tabMatch = row.getAttribute('data-active') === 'true';
 
-        if (textMatch && physMatch && tabMatch) { row.style.display = ''; visible++; }
+        if (textMatch && physMatch && tabMatch && dateMatch) { row.style.display = ''; visible++; }
         else {
             row.style.display = 'none';
             if (noteRow && noteRow.classList.contains('expanded-row')) noteRow.classList.remove('show');

@@ -180,6 +180,13 @@
                     </button>
                 </div>
                 <div class="header-actions">
+                    <span class="viewing-badge"></span>
+                    <div class="date-nav">
+                        <button class="date-nav-btn" id="viewDatePrev" title="Previous day">&lsaquo;</button>
+                        <input type="date" class="date-nav-input" id="viewDate" />
+                        <button class="date-nav-btn" id="viewDateNext" title="Next day">&rsaquo;</button>
+                        <button class="date-nav-today" id="viewDateToday">Today</button>
+                    </div>
                     <div style="font-size:0.875rem; font-weight:500; color:var(--text-mid); padding-right:1.5rem; border-right:1px solid var(--border-light);">
                         <span id="header-time">--:-- --</span> <span id="header-date" style="color:var(--text-muted); font-weight:400; margin-left:6px;"></span>
                     </div>
@@ -256,6 +263,7 @@
         <div id="profile-body" style="overflow-y:auto; max-height:90vh;"></div>
     </div>
 
+    <script src="assets/js/datebar.js"></script>
     <script src="assets/js/patients.js"></script>
 </body>
 </html>
