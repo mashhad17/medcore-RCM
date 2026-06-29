@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>MedCore HMS — Live Clinic Queue</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Lora:ital,wght@0,400;0,500;1,400&display=swap" rel="stylesheet" />
+    
+    <link rel="stylesheet" href="assets/css/medcore.css" />
+
+    <style>
+        /* Kanban Specific Styles */
+        .directory-header { display: flex; justify-content: space-between; align-items: flex-end; margin-bottom: 1.5rem; flex-shrink: 0; }
+        select.dropdown-filter { font-size: 0.875rem; font-weight: 500; padding: 10px 36px 10px 16px; border: 1px solid var(--border-light); border-radius: 8px; background-color: #FFFFFF; outline: none; appearance: none; background-image: url("data:image/svg+xml;charset=UTF-8,%3csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%234B5563' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3e%3cpolyline points='6 9 12 15 18 9'%3e%3c/polyline%3e%3c/svg%3e"); background-repeat: no-repeat; background-position: right 12px center; background-size: 14px; cursor: pointer; transition: all 0.2s ease; box-shadow: 0 1px 2px rgba(0,0,0,0.02); }
+        select.dropdown-filter:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(79, 124, 172, 0.15); }
+
+        .kanban-board { flex: 1; display: flex; gap: 1.5rem; overflow-x: auto; padding-bottom: 1rem; }
+        .kanban-col { flex: 1; min-width: 340px; background: var(--bg-board); border-radius: 12px; display: flex; flex-direction: column; border: 1px solid var(--border-light); }
+        .col-header { padding: 1.25rem; font-weight: 600; color: var(--text-dark); display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid var(--border-light); background: #FFFFFF; border-radius: 12px 12px 0 0; }
+        .col-count { background: var(--bg-aesthetic); color: var(--accent); padding: 4px 10px; border-radius: 20px; font-size: 0.75rem; }
+        .col-body { padding: 1rem; flex: 1; overflow-y: auto; display: flex; flex-direction: column; gap: 1rem; }
+
+        .queue-card { background: #FFFFFF; border: 1px solid var(--border-light); border-radius: 10px; padding: 1.25rem; box-shadow: 0 2px 4px rgba(31, 41, 55, 0.04); transition: transform 0.2s ease, box-shadow 0.2s ease; display: flex; flex-direction: column; gap: 12px; }
+        .queue-card:hover { transform: translateY(-2px); box-shadow: 0 6px 12px rgba(31, 41, 55, 0.08); border-color: #CBD5E1; }
+        .queue-card.moving { opacity: 0; transform: scale(0.9); transition: all 0.3s ease; }
+        
+        .card-top { display: flex; justify-content: space-between; align-items: flex-start; }
+        .pt-name-wrap { display: flex; align-items: center; gap: 10px; }
+        .pt-avatar-sm { width: 32px; height: 32px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-size: 0.75rem; font-weight: 600; flex-shrink: 0; }
+        .avatar-orange { background: #FFEDD5; color: #B45309; }
+        .avatar-blue { background: #E0E7FF; color: #3730A3; }
+        .avatar-green { background: #D1FAE5; color: #065F46; }
+        
+        .pt-name-text { font-weight: 600; color: var(--text-dark); font-size: 0.9375rem; display: block; margin-bottom: 2px; }
+        .pt-mrn { font-size: 0.6875rem; color: var(--text-muted); font-weight: 500; }
+        
+        .timer-badge { padding: 4px 8px; border-radius: 6px; font-size: 0.6875rem; font-weight: 600; display: flex; align-items: center; gap: 4px; border: 1px solid transparent; }
+        .timer-safe { background: var(--success-bg); color: var(--success-text); border-color: #A7F3D0; }
+        .timer-warning { background: var(--warning-bg); color: var(--warning-text); border-color: #FDE68A; }
+        .timer-danger { background: var(--danger-bg); color: var(--danger); border-color: #FECACA; }
+
+        .card-middle { background: #F8FAFC; border-radius: 6px; padding: 10px; border: 1px solid var(--border-light); display: flex; flex-direction: column; gap: 6px; }
+        .detail-row { display: flex; justify-content: space-between; font-size: 0.75rem; }
+        .detail-label { color: var(--text-muted); font-weight: 500; }
+        .detail-value { color: var(--text-dark); font-weight: 600; }
+        .doc-text { color: var(--accent); font-weight: 600; }
+
+        .btn-card-action { width: 100%; background: #FFFFFF; border: 1px solid var(--accent); color: var(--accent); padding: 0.5rem; border-radius: 6px; font-size: 0.8125rem; font-weight: 600; cursor: pointer; transition: all 0.2s ease; display: flex; justify-content: center; gap: 6px; }
+        .btn-card-action:hover { background: var(--bg-aesthetic); }
+        .btn-card-checkout { border-color: var(--success-text); color: var(--success-text); }
+        .btn-card-checkout:hover { background: var(--success-bg); }
+
+        /* Completed lane + paid badge */
+        .queue-card.completed-card { opacity: 0.92; background: var(--bg-board); }
+        .paid-badge { display:inline-flex; align-items:center; gap:5px; padding:4px 10px; border-radius:20px; font-size:0.6875rem; font-weight:700; background: var(--success-bg); color: var(--success-text); }
+        .col-empty { text-align: center; color: var(--text-muted); font-size: 0.8125rem; margin-top: 1.5rem; padding: 1rem; border: 1px dashed var(--border-light); border-radius: 8px; }
+        .stage-pill { font-size:0.625rem; font-weight:700; text-transform:uppercase; letter-spacing:0.04em; padding:3px 8px; border-radius:6px; background: var(--info-bg); color: var(--info-text); }
+    </style>
+    <script src="assets/js/theme.js"></script>
+    <?php require_once __DIR__ . '/bootstrap.php'; ?>
+    <script src="assets/js/store.js"></script>
+</head>
+
+<body>
+
+    <div class="app-container">
+        <div class="sidebar-spacer"></div>
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <div class="nav-icon-wrapper">
+                    <svg width="24" height="24" viewBox="0 0 30 30" fill="none"><rect width="30" height="30" rx="7" fill="#4F7CAC" /><rect x="12" y="5" width="6" height="20" rx="1.5" fill="white" /><rect x="5" y="12" width="20" height="6" rx="1.5" fill="white" /></svg>
+                </div>
+                <span class="lora fade-text" style="font-size:1.125rem; color:var(--text-dark); font-weight:500;">MedCore <span style="font-size:0.875rem; color:var(--text-muted); font-family:'Inter', sans-serif;">HMS</span></span>
+            </div>
+
+            <nav class="nav-menu">
+                <div class="nav-section-title fade-text">Reception Workspace</div>
+                <a href="dashboard.php" class="nav-item">
+                    <div class="nav-icon-wrapper"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="3" width="7" height="7"></rect><rect x="14" y="3" width="7" height="7"></rect><rect x="14" y="14" width="7" height="7"></rect><rect x="3" y="14" width="7" height="7"></rect></svg></div>
+                    <span class="fade-text">Dashboard Hub</span>
+                </a>
+                <a href="schedule.php" class="nav-item">
+                    <div class="nav-icon-wrapper"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg></div>
+                    <span class="fade-text">Scheduling Grid</span>
+                </a>
+                <a href="patients.php" class="nav-item">
+                    <div class="nav-icon-wrapper"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path><circle cx="9" cy="7" r="4"></circle><path d="M23 21v-2a4 4 0 0 0-3-3.87"></path><path d="M16 3.13a4 4 0 0 1 0 7.75"></path></svg></div>
+                    <span class="fade-text">Patient Directory</span>
+                </a>
+                <a href="queue.php" class="nav-item active">
+                    <div class="nav-icon-wrapper"><svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="8" y1="6" x2="21" y2="6"></line><line x1="8" y1="12" x2="21" y2="12"></line><line x1="8" y1="18" x2="21" y2="18"></line><line x1="3" y1="6" x2="3.01" y2="6"></line><line x1="3" y1="12" x2="3.01" y2="12"></line><line x1="3" y1="18" x2="3.01" y2="18"></line></svg></div>
+                    <span class="fade-text">Live Clinic Queue</span>
+                </a>
+            </nav>
+
+            <div class="sidebar-footer" style="display: flex; justify-content: space-between; align-items: center;">
+                <div style="display: flex; align-items: center;">
+                    <div class="user-avatar">AD</div>
+                    <div class="fade-text" style="overflow:hidden;">
+                        <p style="font-size:0.8125rem; font-weight:600; color:var(--text-dark);">System Admin</p>
+                        <p style="font-size:0.75rem; color:var(--text-muted);">ID: admin</p>
+                    </div>
+                </div>
+                <button id="themeToggleBtn" class="fade-text" onclick="toggleTheme()" style="background: transparent; border: none; cursor: pointer; color: var(--text-muted); display: flex; align-items: center; justify-content: center; padding: 4px; border-radius: 50%; transition: color 0.2s;">
+                    <svg id="themeIcon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+                    </svg>
+                </button>
+            </div>
+        </aside>
+
+        <div class="main-wrapper">
+            <header class="top-header">
+                <div class="header-left">
+                    <div class="search-container">
+                        <svg class="search-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+                        <input type="text" id="queueSearchInput" class="search-input" placeholder="Search queue by name, MRN, or doctor..." onkeyup="filterQueue()" />
+                    </div>
+                </div>
+                <div class="header-actions">
+                    <span class="viewing-badge"></span>
+                    <div class="date-nav">
+                        <button class="date-nav-btn" id="viewDatePrev" title="Previous day">&lsaquo;</button>
+                        <input type="date" class="date-nav-input" id="viewDate" />
+                        <button class="date-nav-btn" id="viewDateNext" title="Next day">&rsaquo;</button>
+                        <button class="date-nav-today" id="viewDateToday">Today</button>
+                    </div>
+                    <div style="font-size:0.875rem; font-weight:500; color:var(--text-mid); padding-right:1.5rem; border-right:1px solid var(--border-light);">
+                        <span id="header-time">--:-- --</span> <span id="header-date" style="color:var(--text-muted); font-weight:400; margin-left:6px;"></span>
+                    </div>
+                    <button class="btn-primary" onclick="window.location.href='schedule.php'">
+                        Walk-in Patient
+                    </button>
+                </div>
+            </header>
+
+            <main class="content-area" style="padding: 2rem; overflow-y: hidden; display: flex; flex-direction: column;">
+                
+                <div class="directory-header">
+                    <div>
+                        <h1 class="lora" style="font-size: 1.75rem; font-weight: 500; color: var(--text-dark);">Live Clinic Queue</h1>
+                        <p style="font-size: 0.875rem; color: var(--text-muted); margin-top: 6px;">Real-time patient flow, wait times, and room assignments.</p>
+                    </div>
+                    
+                    <select class="dropdown-filter" id="queuePhysicianFilter" onchange="filterQueue()">
+                        <option value="all">All Physicians</option>
+                        <option value="Dr. Fatima">Dr. Fatima</option>
+                        <option value="Dr. Roger">Dr. Roger</option>
+                        <option value="Dr. Ali">Dr. Ali</option>
+                    </select>
+                </div>
+
+                <div class="kanban-board">
+
+                    <div class="kanban-col" id="col-waiting">
+                        <div class="col-header">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2" ry="2"></rect><line x1="16" y1="2" x2="16" y2="6"></line><line x1="8" y1="2" x2="8" y2="6"></line><line x1="3" y1="10" x2="21" y2="10"></line></svg>
+                                Waiting Room
+                            </div>
+                            <span class="col-count" id="count-waiting">0</span>
+                        </div>
+                        <div class="col-body" id="body-waiting"></div>
+                    </div>
+
+                    <div class="kanban-col" id="col-consultation">
+                        <div class="col-header" style="border-bottom-color: var(--accent);">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"></path></svg>
+                                In Consultation
+                            </div>
+                            <span class="col-count" id="count-consultation">0</span>
+                        </div>
+                        <div class="col-body" id="body-consultation"></div>
+                    </div>
+
+                    <div class="kanban-col" id="col-billing">
+                        <div class="col-header" style="border-bottom-color: var(--success-text);">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--success-text)" stroke-width="2"><rect x="2" y="4" width="20" height="16" rx="2"></rect><line x1="2" y1="10" x2="22" y2="10"></line></svg>
+                                Billing & Checkout
+                            </div>
+                            <span class="col-count" id="count-billing">0</span>
+                        </div>
+                        <div class="col-body" id="body-billing"></div>
+                    </div>
+
+                    <div class="kanban-col" id="col-completed">
+                        <div class="col-header" style="border-bottom-color: var(--text-muted);">
+                            <div style="display:flex; align-items:center; gap:8px;">
+                                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="var(--text-muted)" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><polyline points="22 4 12 14.01 9 11.01"></polyline></svg>
+                                Completed
+                            </div>
+                            <span class="col-count" id="count-completed">0</span>
+                        </div>
+                        <div class="col-body" id="body-completed"></div>
+                    </div>
+
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <script src="assets/js/datebar.js"></script>
+    <script src="assets/js/queue.js"></script>
+</body>
+</html>

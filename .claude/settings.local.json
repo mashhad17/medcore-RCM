@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(/c/xampp/mysql/bin/mysql.exe -u root medcore -e \"SHOW TABLES; SELECT name FROM doctors;\")",
+      "Bash(php -r ' *)",
+      "Bash(php -r 'require \"lib.php\"; $pdo=medcore_db\\(\\); *)"
+    ]
+  }
+}
